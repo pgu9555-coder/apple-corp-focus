@@ -1,0 +1,23 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - name: Verify release version
+        run: node -e "const m=require('./extension/manifest.json'); if(process.env.GITHUB_REF_NAME!=='v'+m.version) process.exit(1)"
+      - name: Package extension and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip -r "apple-corp-focus-${GITHUB_REF_NAME}.zip" extension README.md LICENSE PRIVACY.md CHANGELOG.md
+          gh release create "$GITHUB_REF_NAME" "apple-corp-focus-${GITHUB_REF_NAME}.zip" --verify-tag --title "Apple Corp Focus $GITHUB_REF_NAME" --generate-notes

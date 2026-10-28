@@ -1,0 +1,8 @@
+{
+  "name": "focus-machine",
+  "version": "0.5.2",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": { "test": "node --test tests/*.test.js" }
+}
