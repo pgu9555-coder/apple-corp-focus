@@ -88,6 +88,17 @@ export class Controller{
   await this.save();await this.schedule();return this.snapshot();
  }
  async finish(){const s=this.state.session;if(!s||!LIVE.has(s.phase))throw Error('No active block to finish.');if(!isPaused(s))await this.tick();if(!LIVE.has(s.phase))return this.snapshot();if(s.kind==='focus'&&!s.goalReached)throw Error('Complete the focus goal or use Cancel session.');this.stop('completed',s.kind==='break'?'Break finished manually.':'Focus finished. Start the chosen break when ready.');await this.save();await this.schedule();return this.snapshot();}
+ async finishAndBreak(){
+  const s=this.state.session;
+  if(!s||s.kind!=='focus'||s.phase!=='focus')throw Error('No active focus session to finish.');
+  if(!isPaused(s))await this.tick();
+  if(s.phase!=='focus')throw Error('Focus was interrupted. Start a new focus session when ready.');
+  if(!s.goalReached)throw Error('Complete the focus goal before starting its break.');
+  // One queued user command owns this transition, so double clicks cannot restart a break.
+  this.stop('completed','Focus finished. Starting the chosen break.');
+  await this.save();
+  return this.start('break');
+ }
  async cancel(confirmed=false){
   const s=this.state.session;
   if(!s||s.kind!=='focus'||!LIVE.has(s.phase))throw Error('No active focus session.');

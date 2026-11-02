@@ -1,5 +1,6 @@
 import {alertCue} from './audio.js';
 import {Controller, LIVE, remaining, elapsed, isPaused, isWarning, needsDeviceLease} from './core.js';
+import {PageWarnings,warningAccess} from './page-warnings.js';
 
 let device=null;
 let deviceMode='';
@@ -88,6 +89,7 @@ const controller=new Controller({
   warning:state=>{const s=state.session;warningNotificationId=`site-warning-${s.id}`;chrome.notifications.create(warningNotificationId,{type:'basic',iconUrl:'assets/icon128.png',title:'Leave the blocked website',message:`Leave ${s.siteWarning.host} within 10 seconds to keep this focus session. Focus time is frozen.`,priority:2,requireInteraction:true}).catch(console.warn);},
   alert:state=>{alertUser(state).catch(console.error);},
 });
+const pageWarnings=new PageWarnings(chrome,()=>controller.snapshot());
 const ready=(async()=>{
   await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
   const [saved,epoch,windows]=await Promise.all([
@@ -98,7 +100,10 @@ const ready=(async()=>{
   await controller.load(saved.state,Boolean(epoch.browserSession));
   await badge(controller.snapshot());
 })();
-function run(fn) { return ready.then(()=>controller.run(fn)); }
+function run(fn) { return ready.then(()=>controller.run(async()=>{
+  try { return await fn(); }
+  finally { pageWarnings.refresh().catch(console.warn); }
+})); }
 function event(fn) { run(fn).catch(error=>{
   console.error(error);
   run(()=>controller.autoPause('Monitoring paused after an error. Resume manually when ready.')).catch(console.error);
@@ -115,6 +120,8 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         if(LIVE.has(s?.phase)&&!isPaused(s)&&Date.now()-(s.accountedAt??s.lastCheckAt??Date.now())>=1000)await controller.tick();
         const snapshot=controller.snapshot();
         snapshot.activeBlocked=controller.findBlocked(await focusedTab(),snapshot.settings.blockedHosts);
+        snapshot.pageWarningAccess=await warningAccess(chrome,snapshot.settings.blockedHosts);
+        snapshot.notificationPermission=await chrome.notifications.getPermissionLevel?.().catch(()=> 'unknown')||'unknown';
         return snapshot;
       }
       case 'start': {
@@ -128,6 +135,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
       case 'pause': return controller.pause(message.confirmed);
       case 'resume': return controller.resume();
       case 'finish': return controller.finish();
+      case 'finish-break': return controller.finishAndBreak();
       case 'prepare-focus': return controller.prepareFocus();
       case 'collect': return controller.collect();
       case 'connect-device': {
@@ -204,9 +212,9 @@ function navigation(details) {
   event(async()=>{const current=await attention;if(wasActive||(current?.active&&current.focused))await controller.visit(details.url);});
 }
 chrome.webNavigation.onBeforeNavigate.addListener(navigation);
-chrome.webNavigation.onCommitted.addListener(navigation);
+chrome.webNavigation.onCommitted.addListener(details=>{if(details.frameId===0)pageWarnings.invalidate(details.tabId);navigation(details);});
 chrome.webNavigation.onHistoryStateUpdated.addListener(navigation);
-chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.url)navigation({tabId,frameId:0,url:change.url});});
+chrome.tabs.onUpdated.addListener((tabId,change)=>{if(change.url)navigation({tabId,frameId:0,url:change.url});if(change.status==='complete'){pageWarnings.invalidate(tabId);event(()=>controller.tick());}});
 chrome.tabs.onActivated.addListener(info=>{
   controller.revision++;
   activeTabs.set(info.windowId,info.tabId);
@@ -240,6 +248,8 @@ chrome.alarms.onAlarm.addListener(alarm=>{if(['focus-check','focus-end','site-gr
 chrome.idle.onStateChanged.addListener(state=>{if(state==='locked'){controller.revision++;event(()=>controller.autoPause('The computer was locked. Your progress is saved. Resume manually when ready.'));}});
 chrome.runtime.onStartup.addListener(()=>event(()=>controller.autoPause('Chrome restarted. Your progress is saved. Resume manually when ready.')));
 chrome.notifications.onClicked.addListener(()=>chrome.action.openPopup().catch(console.warn));
+chrome.permissions?.onAdded?.addListener(()=>pageWarnings.refresh().catch(console.warn));
+chrome.permissions?.onRemoved?.addListener(()=>pageWarnings.refresh().catch(console.warn));
 
 // Restore cleared alarms on service-worker wake. A normal worker suspension does not reset the timer.
 ready.then(()=>run(()=>controller.tick())).catch(console.error);

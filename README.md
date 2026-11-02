@@ -1,10 +1,10 @@
-# Apple Corp Focus Machine v0.5.2
+# Apple Corp Focus Machine v0.5.3
 
 Apple Corp Focus Machine is an English-only Chrome extension for user-controlled focus sessions, local blocked-site checks, and optional Arduino reward collection. The timer, pause, break, reward, and device actions are available in the popup; **Edit websites** opens the separate website-rules page.
 
 ## Install from a release
 
-1. Download the `apple-corp-focus-v0.5.2.zip` asset from the [latest release](https://github.com/pgu9555-coder/apple-corp-focus/releases/latest).
+1. Download the `apple-corp-focus-v0.5.3.zip` asset from the [latest release](https://github.com/pgu9555-coder/apple-corp-focus/releases/latest).
 2. Extract it to a stable folder. Find the `extension` subfolder containing `manifest.json`.
 3. Open `chrome://extensions` in desktop Chrome and enable **Developer mode**.
 4. Choose **Load unpacked** and select that `extension` subfolder.
@@ -12,14 +12,22 @@ Apple Corp Focus Machine is an English-only Chrome extension for user-controlled
 
 Disable an older copy so that two timers are not running at the same time. Updating the same installation preserves schema-5 settings, blocked hosts, balances, claims, sessions, and history. A fresh folder may have separate local settings.
 
-To update an existing unpacked installation, finish or pause the current session, replace the files in its previously loaded extension folder, and click **Reload** on its Chrome extensions card. Check that the popup says **v0.5.2**. Legacy schema 1–4 data follows the one-time reset of rewards and history; settings are retained. Do not import older storage backups.
+To update an existing unpacked installation, finish or pause the current session, replace the files in its previously loaded extension folder, and click **Reload** on its Chrome extensions card. Check that the popup says **v0.5.3**. Legacy schema 1–4 data follows the one-time reset of rewards and history; settings are retained. Do not import older storage backups.
+
+## Optional on-page countdown
+
+Open **Settings → Enable on-page warnings** in the popup to request access to the websites in your blocked list. Approve Chrome's permission prompt only if you want the countdown banner. The extension requests the listed domains and their subdomains, not access to all sites at once. After adding a new blocked domain, enable warnings again to cover it.
+
+When a focused tab visits an allowed-to-display blocked site during a focus session, a banner shows the remaining grace time. It does not read page contents, take keyboard focus, or alter the reward rules. The original ten-second deadline remains authoritative even if the page loads slowly or the banner cannot be displayed. Page restrictions, browser settings, or page behavior may prevent a visible banner.
+
+Declining or revoking website access does not disable the timer or blocked-site checks. The popup countdown and toolbar badge remain available, with browser notifications where Chrome and the operating system allow them. Neither notification permission nor automated tests guarantee that a notification will be visible. You can revoke granted site access in Chrome's extension settings.
 
 ## Session rules
 
 - Choose any whole-number focus duration from 1–180 minutes and a positive break duration up to 180 minutes. There is no fixed ratio or automatic rest calculation.
 - The built-in 25/5 and 50/10 presets can be deleted with their `×` controls. **Save preset** stores a reusable custom pair; the active fields are saved automatically for the next block.
 - Start each focus and break manually. Quiet Flow earns one reward for every full selected focus interval. For example, a 1-minute selection earns at 1 and 2 minutes, while a 100-minute selection earns at 100 and 200 minutes. Partial intervals do not carry into a later manual run. Pomodoro is capped at one reward per focus session.
-- Finish is unavailable before the focus goal. Cancel requires confirmation, clears incomplete progress, earns no reward, and does not create a break.
+- Finish is unavailable before the focus goal. Cancel requires confirmation, clears incomplete progress, earns no reward, and does not create a break. After reaching the goal, **Finish & take a break** ends focus and starts the chosen break with one manual click. **Finish without break** keeps the break available for later.
 - Emergency pause requires confirmation. Paused time is excluded; resume is manual. Closing the popup does not stop a session.
 - Quiet Flow does not interrupt at reward milestones. Pomodoro gives a goal reminder. Neither starts a break automatically. A confirmed emergency pause during a website warning cancels that warning; resuming focus still requires leaving blocked sites.
 - During focus, an active blocked website starts a ten-second grace period. Focus time is frozen while the warning is active. Leaving any blocked host before the deadline resumes the session; switching between blocked hosts does not restart the countdown. Expiry ends the block, clears incomplete progress, and keeps rewards already earned.
@@ -42,4 +50,4 @@ node tests/independent-acceptance.mjs
 
 Tests use simulated clocks and browser/serial interfaces. They do not prove a real installed toolbar session, uninterrupted long-duration timing, or physical hardware behavior. See `TEST_RESULTS.md` for the current run and its limits. This repository is released under the MIT License; see `PRIVACY.md` for local data handling.
 
-Pushes and pull requests run the test suite. Maintainers publish a release by updating the version and pushing its matching `v` tag, for example `v0.5.2`; the release workflow tests again, checks the manifest version, and attaches an installable ZIP. Ordinary pushes do not create releases. The firmware and tests are available in the repository/source archives, not the extension-only release asset.
+Pushes and pull requests run the test suite. Maintainers publish a release by updating the version and pushing its matching `v` tag, for example `v0.5.3`; the release workflow tests again, checks the manifest version, and attaches an installable ZIP. Ordinary pushes do not create releases. The firmware and tests are available in the repository/source archives, not the extension-only release asset.

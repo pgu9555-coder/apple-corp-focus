@@ -5,11 +5,17 @@ import {pathToFileURL} from 'node:url';
 const bgPath=new URL('../extension/background.js',import.meta.url).href;
 let importNumber=0;
 class Event {constructor(){this.listeners=[];} addListener(fn){this.listeners.push(fn);} async emit(...args){for(const fn of this.listeners)await fn(...args);}}
-function harness(shared={local:{},session:{}}){
-  let clock=Date.now(),tabId=1,windowId=1;const alarms=new Map(),windows=[{id:windowId,focused:true,type:'normal',tabs:[{id:tabId,active:true,url:'https://study.test/'}]}];
+function harness(shared={local:{},session:{}},options={}){
+  let clock=Date.now(),tabId=1,windowId=1;const alarms=new Map(),sentMessages=[],injections=[];
+  const windows=[{id:windowId,focused:true,type:'normal',tabs:[{id:tabId,windowId,active:true,url:'https://study.test/'}]}];
   const backing=shared;
   const runtime={id:'test-extension',onMessage:new Event(),onConnect:new Event(),onStartup:new Event(),getURL:p=>`chrome-extension://test-extension/${p}`,getContexts:async()=>[],sendMessage:async()=>({ok:true,value:{}})};
-  const chrome={runtime,windows:{WINDOW_ID_NONE:-1,onFocusChanged:new Event(),onRemoved:new Event(),getAll:async()=>structuredClone(windows),get:async id=>windows.find(w=>w.id===id),update:async()=>{}},tabs:{onUpdated:new Event(),onActivated:new Event(),onReplaced:new Event(),get:async id=>windows.flatMap(w=>w.tabs).find(t=>t.id===id),query:async()=>windows.flatMap(w=>w.tabs).filter(t=>t.active),create:async()=>{},update:async()=>{}},webNavigation:{onBeforeNavigate:new Event(),onCommitted:new Event(),onHistoryStateUpdated:new Event()},alarms:{onAlarm:new Event(),create:async(name,opt)=>alarms.set(name,opt),clear:async name=>alarms.delete(name)},idle:{onStateChanged:new Event()},notifications:{onClicked:new Event(),create:async()=>'',getAll:async()=>({})},action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{},setTitle:async()=>{},openPopup:async()=>{}},offscreen:{createDocument:async()=>{},closeDocument:async()=>{}},storage:{local:{setAccessLevel:async()=>{},get:async key=>({state:backing.local.state}),set:async value=>Object.assign(backing.local,value)},session:{get:async key=>({browserSession:backing.session.browserSession}),set:async value=>Object.assign(backing.session,value)}},scripting:{}};
+  const granted=options.permissions||[];
+  const logs=[];const oldConsole=globalThis.console;
+  if(options.captureWarnings)globalThis.console={...oldConsole,warn:(...args)=>logs.push(args),error:(...args)=>oldConsole.error(...args)};
+  const permissions={onAdded:new Event(),onRemoved:new Event(),contains:async({origins})=>origins.every(origin=>granted.includes(origin)||granted.includes('*')||granted.includes(origin.replace(/^(https?:\/\/)/,'$1*.')))};
+  const scripting={executeScript:async details=>{injections.push(details);if(options.scriptingError)throw Error('injection denied');}};
+  const chrome={runtime,permissions,windows:{WINDOW_ID_NONE:-1,onFocusChanged:new Event(),onRemoved:new Event(),getAll:async()=>structuredClone(windows),get:async id=>windows.find(w=>w.id===id),update:async()=>{}},tabs:{onUpdated:new Event(),onActivated:new Event(),onReplaced:new Event(),get:async id=>windows.flatMap(w=>w.tabs).find(t=>t.id===id),query:async()=>windows.flatMap(w=>w.tabs).filter(t=>t.active),sendMessage:async(tabId,message)=>{sentMessages.push({tabId,message});},create:async()=>{},update:async()=>{}},webNavigation:{onBeforeNavigate:new Event(),onCommitted:new Event(),onHistoryStateUpdated:new Event()},alarms:{onAlarm:new Event(),create:async(name,opt)=>alarms.set(name,opt),clear:async name=>alarms.delete(name)},idle:{onStateChanged:new Event()},notifications:{onClicked:new Event(),create:async()=>'',getAll:async()=>({})},action:{setBadgeText:async()=>{},setBadgeBackgroundColor:async()=>{},setTitle:async()=>{},openPopup:async()=>{}},offscreen:{createDocument:async()=>{},closeDocument:async()=>{}},storage:{local:{setAccessLevel:async()=>{},get:async key=>({state:backing.local.state}),set:async value=>Object.assign(backing.local,value)},session:{get:async key=>({browserSession:backing.session.browserSession}),set:async value=>Object.assign(backing.session,value)}},scripting};
   const oldNow=Date.now;Date.now=()=>clock;globalThis.chrome=chrome;
   const ready=import(`${bgPath}?test=${++importNumber}`);
   async function flush(){await ready;await new Promise(r=>setImmediate(r));}
@@ -17,8 +23,14 @@ function harness(shared={local:{},session:{}}){
   async function emit(event,...args){await flush();await event.emit(...args);await flush();}
   function setTime(ms){clock=ms;} function advance(ms){clock+=ms;}
   async function navigate(url){windows[0].tabs[0].url=url;await emit(chrome.webNavigation.onCommitted,{tabId:tabId,frameId:0,url});}
-  async function close(){Date.now=oldNow;}
-  return {chrome,backing,ready,invoke,emit,setTime,advance,navigate,flush,alarms,close};
+  async function activate(url){
+    for(const tab of windows[0].tabs)tab.active=false;
+    const nextTabId=windows[0].tabs.length+1;
+    windows[0].tabs.push({id:nextTabId,windowId,active:true,url});
+    await emit(chrome.tabs.onActivated,{tabId:nextTabId,windowId});
+  }
+  async function close(){Date.now=oldNow;if(options.captureWarnings)globalThis.console=oldConsole;}
+  return {chrome,backing,ready,invoke,emit,setTime,advance,navigate,activate,flush,alarms,sentMessages,injections,logs,close};
 }
 
 test('background trusts extension messages, scopes settings, and drains concurrent queue',async()=>{
@@ -80,5 +92,91 @@ test('background switching between blocked sites keeps one grace deadline',async
   try{
     await h.invoke({target:'worker',type:'website-settings',settings:{blockedHosts:['bad.test','other.test']}});await h.invoke({target:'worker',type:'start',kind:'focus'});await h.navigate('https://bad.test/');
     let state=(await h.invoke({target:'worker',type:'get'})).state;const deadline=state.session.siteWarning.deadlineAt;h.advance(9000);await h.navigate('https://other.test/');state=(await h.invoke({target:'worker',type:'get'})).state;assert.equal(state.session.siteWarning.deadlineAt,deadline);
+  }finally{await h.close();}
+});
+
+test('background finish-break requires the focus goal and starts one manual break',async()=>{
+  const h=harness();
+  try{
+    await h.invoke({target:'worker',type:'timer-settings',settings:{focusMinutes:1,breakMinutes:5}});
+    await h.invoke({target:'worker',type:'start',kind:'focus'});
+    let reply=await h.invoke({target:'worker',type:'finish-break'});
+    assert.equal(reply.ok,false);assert.match(reply.error,/goal|focus/i);
+    let state=(await h.invoke({target:'worker',type:'get'})).state;
+    assert.equal(state.session.phase,'focus');assert.equal(state.ledger.earned,0);assert.equal(state.restMs,0);
+
+    h.advance(60000);
+    reply=await h.invoke({target:'worker',type:'finish-break'});
+    assert.equal(reply.ok,true);assert.equal(reply.state.session.kind,'break');assert.equal(reply.state.session.phase,'break');
+    assert.equal(reply.state.ledger.earned,1);assert.equal(reply.state.restMs,0);
+    const breakId=reply.state.session.id;
+    reply=await h.invoke({target:'worker',type:'finish-break'});
+    assert.equal(reply.ok,false);assert.match(reply.error,/focus|active/i);
+    state=(await h.invoke({target:'worker',type:'get'})).state;assert.equal(state.session.id,breakId);assert.equal(state.ledger.earned,1);
+  }finally{await h.close();}
+});
+
+test('background finish-break does not start a break after grace expiry',async()=>{
+  const h=harness();
+  try{
+    await h.invoke({target:'worker',type:'website-settings',settings:{blockedHosts:['bad.test']}});
+    await h.invoke({target:'worker',type:'timer-settings',settings:{focusMinutes:1,breakMinutes:5}});
+    await h.invoke({target:'worker',type:'start',kind:'focus'});h.advance(60000);await h.invoke({target:'worker',type:'get'});
+    await h.navigate('https://bad.test/');
+    let state=(await h.invoke({target:'worker',type:'get'})).state;const deadline=state.session.siteWarning.deadlineAt;
+    h.setTime(deadline);const reply=await h.invoke({target:'worker',type:'finish-break'});
+    assert.equal(reply.ok,false);assert.match(reply.error,/failed|goal|focus/i);
+    state=(await h.invoke({target:'worker',type:'get'})).state;assert.equal(state.session.phase,'failed');assert.equal(state.session.kind,'focus');
+    assert.equal(state.restMs,300000);assert.equal(state.ledger.earned,1);
+  }finally{await h.close();}
+});
+
+test('granted host permission injects a warning banner and popup reports access',async()=>{
+  const h=harness({local:{},session:{}}, {permissions:['http://*.bad.test/*','https://*.bad.test/*']});
+  try{
+    await h.invoke({target:'worker',type:'website-settings',settings:{blockedHosts:['bad.test']}});
+    await h.invoke({target:'worker',type:'start',kind:'focus'});
+    await h.navigate('https://bad.test/');
+    let state=(await h.invoke({target:'worker',type:'get'})).state;
+    assert.equal(state.session.siteWarning.host,'bad.test');
+    assert.equal(state.pageWarningAccess.granted,true);
+    assert.ok(h.injections.length>=1);
+    assert.equal(h.sentMessages.at(-1).message.warning.host,'bad.test');
+    await h.activate('https://study.test/');
+    const left=(await h.invoke({target:'worker',type:'get'})).state;
+    for(let i=0;i<5;i++)await h.flush();
+    assert.equal(left.session.siteWarning,null);
+    assert.equal(h.sentMessages.some(entry=>entry.tabId===1&&entry.message.warning===null),true);
+  }finally{await h.close();}
+});
+
+test('denied host permission does not inject, while grace expiry still fails the focus',async()=>{
+  const h=harness({local:{},session:{}}, {permissions:[]});
+  try{
+    await h.invoke({target:'worker',type:'website-settings',settings:{blockedHosts:['bad.test']}});
+    await h.invoke({target:'worker',type:'start',kind:'focus'});
+    await h.navigate('https://bad.test/');
+    let state=(await h.invoke({target:'worker',type:'get'})).state;
+    assert.equal(state.pageWarningAccess.granted,false);
+    assert.equal(h.injections.length,0);
+    const deadline=state.session.siteWarning.deadlineAt;
+    h.setTime(deadline);await h.emit(h.chrome.alarms.onAlarm,{name:'site-grace'});
+    state=(await h.invoke({target:'worker',type:'get'})).state;
+    assert.equal(state.session.phase,'failed');
+  }finally{await h.close();}
+});
+
+test('warning injection rejection does not auto-pause focus or block worker requests',async()=>{
+  const h=harness({local:{},session:{}}, {permissions:['http://*.bad.test/*','https://*.bad.test/*'],scriptingError:true,captureWarnings:true});
+  try{
+    await h.invoke({target:'worker',type:'website-settings',settings:{blockedHosts:['bad.test']}});
+    await h.invoke({target:'worker',type:'start',kind:'focus'});
+    await h.navigate('https://bad.test/');
+    const reply=await h.invoke({target:'worker',type:'get'});
+    assert.equal(reply.ok,true);
+    assert.equal(reply.state.session.phase,'focus');
+    assert.equal(reply.state.session.pausedAt,null);
+    assert.ok(h.injections.length>=1);
+    assert.equal(h.logs.length>=1,true);
   }finally{await h.close();}
 });
