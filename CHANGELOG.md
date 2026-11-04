@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.4 — 2026-11-04
+
+- Replaced the extension logo with the Apple Corp padlock apple: new toolbar and extension icons at 16/32/48/128 px, and a matching header mark in the popup and website rules page.
+
 ## 0.5.3 — 2026-11-01
 
 - Added an optional on-page ten-second countdown with explicit permission for blocked domains only. Denying access leaves the timer, popup countdown, badge, and supported browser notifications available.

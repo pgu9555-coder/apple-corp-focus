@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Apple Corp Focus Machine",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Choose your focus and break times, protect focus from distracting sites, and collect earned rewards with an Arduino device.",
   "minimum_chrome_version": "127",
   "permissions": ["alarms", "storage", "tabs", "webNavigation", "notifications", "offscreen", "idle", "scripting"],
