@@ -60,7 +60,7 @@ async function connect(info){
     reader=port.readable.getReader();writer=port.writable.getWriter();readLoop(reader);
     await new Promise(resolve=>setTimeout(resolve,2000));
     const hello=await request('HELLO');
-    if(!['READY_BANK_TEST','READY_BANK'].includes(hello))throw new Error('Old single-session firmware is incompatible. Upload the included FocusMachineBankTest sketch (LED only), or compatible BANK firmware.');
+    if(!['READY_BANK_TEST','READY_BANK'].includes(hello))throw new Error('Old single-session firmware is incompatible. Upload the included FocusMachineServo sketch (or the LED-only FocusMachineBankTest), or compatible BANK firmware.');
     mode=hello==='READY_BANK_TEST'?'test':'live';connecting=false;publish();return {mode};
   }catch(error){await disconnect();throw error;}
 }

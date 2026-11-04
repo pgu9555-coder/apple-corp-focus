@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.5 — 2026-11-04
+
+- Added `firmware/FocusMachineServo`, Arduino Uno firmware that drives the dispenser servo and confirms each treat with the chute sensor. It stays in LED test mode until the servo positions are calibrated. It compiles for the Uno; it has not yet run on the real machine.
+- Added `firmware/mac-upload.sh` to compile and upload the firmware from macOS.
+- The release ZIP now includes the `firmware` folder.
+- The incompatible-firmware message now points to the servo sketch. No timer, reward, or website behavior changed.
+
 ## 0.5.4 — 2026-11-04
 
 - Replaced the extension logo with the Apple Corp padlock apple: new toolbar and extension icons at 16/32/48/128 px, and a matching header mark in the popup and website rules page.

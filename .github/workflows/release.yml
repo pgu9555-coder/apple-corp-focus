@@ -19,5 +19,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          zip -r "apple-corp-focus-${GITHUB_REF_NAME}.zip" extension README.md LICENSE PRIVACY.md CHANGELOG.md
+          zip -r "apple-corp-focus-${GITHUB_REF_NAME}.zip" extension firmware README.md LICENSE PRIVACY.md CHANGELOG.md
           gh release create "$GITHUB_REF_NAME" "apple-corp-focus-${GITHUB_REF_NAME}.zip" --verify-tag --title "Apple Corp Focus $GITHUB_REF_NAME" --generate-notes
