@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eye tracking setup</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  main{max-width:520px;margin:32px auto;padding:0 16px}
+  #preview{display:block;width:100%;max-width:320px;background:#000;border-radius:8px;transform:scaleX(-1)}
+  #practice{margin-top:22px;padding:14px;border:1px solid #9ca3af;border-radius:8px}
+  #practice h2{margin:0 0 8px}
+  #practice-live[data-state="away"]{color:#b54708}
+  #practice-live[data-state="present"]{color:#087443}
+  .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .row button{width:auto;padding:8px 16px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Eye tracking setup</h1>
+  <p>The camera runs here when you start a test, and during focus sessions when eye tracking is enabled. Video is analyzed on this computer and is never saved or uploaded.</p>
+  <p>1. Allow the camera. 2. Look at the screen the way you normally work and press Calibrate. 3. Turn your head away to check it says Looking away.</p>
+  <video id="preview" muted playsinline></video>
+  <p id="status" role="status">Not started.</p>
+  <p id="gaze" aria-live="polite"></p>
+  <p id="diagnostics" style="font-size:13px"></p>
+  <p id="numbers" style="font-variant-numeric:tabular-nums;font-size:13px;color:#555"></p>
+  <div class="row">
+    <button id="allow" class="primary" type="button">Allow camera and test</button>
+    <button id="calibrate" class="secondary" type="button" disabled>Calibrate: look at the screen normally for 2 seconds</button>
+    <button id="done" class="secondary" type="button" disabled>Stop camera</button>
+  </div>
+  <section id="practice" aria-labelledby="practice-title">
+    <h2 id="practice-title">Practice: turn and return</h2>
+    <p>Use this before starting a focus session. Turn your head or move out of the camera frame. Moving only your eyes may not trigger it.</p>
+    <p><strong id="practice-live">Camera off</strong></p>
+    <p id="practice-step" role="status">Start the camera to practice.</p>
+    <div class="row">
+      <button id="practice-start" type="button" class="secondary" disabled>Start practice</button>
+      <button id="practice-stop" type="button" class="secondary" disabled>Stop test</button>
+    </div>
+  </section>
+</main>
+<script type="module" src="camera.js"></script>
+</body>
+</html>

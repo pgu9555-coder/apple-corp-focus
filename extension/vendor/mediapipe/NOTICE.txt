@@ -1,0 +1,1 @@
+@mediapipe/tasks-vision 0.10.35 and the Face Landmarker model, Copyright Google LLC, Apache License 2.0. Bundled locally; no remote code is loaded.

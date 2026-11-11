@@ -1,4 +1,4 @@
-import {LIVE,remaining,elapsed,formatTime,isPaused,isWarning,warningRemaining,rewardSummary,settingsFrom} from './core.js';
+import {LIVE,remaining,elapsed,formatTime,isPaused,isWarning,isAway,awayRemaining,warningRemaining,rewardSummary,settingsFrom} from './core.js';
 import {warningOrigins} from './page-warnings.js';
 
 if (document.body?.classList.contains('popup')) {
@@ -75,20 +75,20 @@ function queueSettingsSave() {
 }
 function paintClock() {
   if (!popup || !state) return;
-  const session=state.session, live=LIVE.has(session?.phase), warning=isWarning(session), setup=!session||state.ui?.view==='ready';
+  const session=state.session, live=LIVE.has(session?.phase), warning=isWarning(session), away=isAway(session), setup=!session||state.ui?.view==='ready';
   if (setup) { $('timer-caption').textContent='Choose focus and break minutes, then start manually.'; preview(); return; }
   const seconds=elapsed(session), goal=Math.floor((session.durationMs||0)/1000), overtime=session.kind==='focus'&&seconds>=goal;
   const repeating=live&&session.kind==='focus'&&session.timerMode==='flow'&&session.goalReached;
   const flowNext=repeating?Math.max(0,(Number(session.rewardsAwarded||0)+1)*goal-seconds):0;
-  $('timer').textContent=warning?formatTime(warningRemaining(session)):formatTime(live?(repeating?flowNext:(overtime?seconds:remaining(session))):seconds);
-  $('timer-caption').textContent=warning?'Time to leave · focus time is frozen':isPaused(session)?'Paused · time excluded':session.kind==='break'?(live?'Rest · no focus rewards accrue':'break elapsed'):session.phase==='focus'?(repeating?(flowNext?'until next reward':'Confirming reward…'):session.goalReached?`Goal reached · ${session.rewardsAwarded||1} reward${(session.rewardsAwarded||1)===1?'':'s'} earned`:overtime?'Confirming completion…':'remaining'):'effective focus in this block';
+  $('timer').textContent=warning?formatTime(warningRemaining(session)):away?formatTime(awayRemaining(session)):formatTime(live?(repeating?flowNext:(overtime?seconds:remaining(session))):seconds);
+  $('timer-caption').textContent=warning?'Time to leave · focus time is frozen':away?'Look back · focus time is frozen':isPaused(session)?'Paused · time excluded':session.kind==='break'?(live?'Rest · no focus rewards accrue':'break elapsed'):session.phase==='focus'?(repeating?(flowNext?'until next reward':'Confirming reward…'):session.goalReached?`Goal reached · ${session.rewardsAwarded||1} reward${(session.rewardsAwarded||1)===1?'':'s'} earned`:overtime?'Confirming completion…':'remaining'):'effective focus in this block';
   $('effective-time').textContent=formatTime(seconds); $('progress').style.width=`${Math.min(100,goal?seconds*100/goal:0)}%`;
 }
 function renderHistory() {
   const box=$('history-list'); if (!box) return; box.replaceChildren();
   for (const entry of (state?.history||[]).slice(0,8)) {
     const line=document.createElement('p'), mins=Math.round(Number(entry.focusMinutes)||0), when=entry.at?new Date(entry.at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
-    let text=entry.type==='completed'?`${mins}/${mins} min · +1 reward`:entry.type==='reward'?`${formatTime(Math.floor((Number(entry.effectiveMs)||0)/1000))} · +1 reward`:entry.type==='site-warning'?'Blocked website · 10-second warning':entry.type==='warning-cleared'?'Blocked website left · focus resumed':entry.type==='cancelled'?`${formatTime(Math.floor((Number(entry.effectiveMs)||0)/1000))} / ${mins}:00 · No reward`:entry.type==='failed'?((Number(entry.rewardsKept)||0)>0||entry.rewardDelta>0||/reward was earned/i.test(entry.reason||'')?'Blocked website · Reward kept':'Blocked website · No reward'):entry.type==='claim'?'Reward collection requested':String(entry.type||'Activity');
+    let text=entry.type==='completed'?`${mins}/${mins} min · +1 reward`:entry.type==='reward'?`${formatTime(Math.floor((Number(entry.effectiveMs)||0)/1000))} · +1 reward`:entry.type==='site-warning'?'Blocked website · 10-second warning':entry.type==='warning-cleared'?'Blocked website left · focus resumed':entry.type==='away-warning'?'Looked away · 10-second warning':entry.type==='away-cleared'?'Looked back · focus resumed':entry.type==='cancelled'?`${formatTime(Math.floor((Number(entry.effectiveMs)||0)/1000))} / ${mins}:00 · No reward`:entry.type==='failed'?((Number(entry.rewardsKept)||0)>0||entry.rewardDelta>0||/reward was earned/i.test(entry.reason||'')?'Blocked website · Reward kept':'Blocked website · No reward'):entry.type==='claim'?'Reward collection requested':String(entry.type||'Activity');
     line.textContent=when?`${when} · ${text}`:text; box.append(line);
   }
 }
@@ -97,14 +97,15 @@ function render(next) {
   const paused=isPaused(session), warning=isWarning(session), setup=!session||state.ui?.view==='ready', summary=rewardSummary(state), hardware=state.hardware||{};
   const sending=(state.ledger?.claims||[]).some(claim=>claim.status==='sending');
   if (!popup) { const value=settings.blockedHosts.join('\n'); if (value!==websiteSignature) { $('website-rules').value=value; websiteSignature=value; } $('website-settings-fields').disabled=live; return; }
+  const away=isAway(session);
   document.body.dataset.phase=phase; document.body.dataset.paused=String(paused); document.body.dataset.warning=String(warning); document.body.dataset.setup=String(setup);
-  $('phase').textContent=setup?'READY WHEN YOU ARE':warning?'LEAVE BLOCKED SITE':paused?'PAUSED':({focus:session.timerMode==='flow'&&session.goalReached?'QUIET FLOW · STILL FOCUSING':`FOCUSING · ${Math.round(session.durationMs/60000)} MIN GOAL`,break:'TAKE A BREATHER',completed:session.kind==='break'?'BREAK COMPLETE':'FOCUS COMPLETE',failed:'DISTRACTION DETECTED',fault:'MONITORING INTERRUPTED'}[phase]||'READY');
+  $('phase').textContent=setup?'READY WHEN YOU ARE':warning?'LEAVE BLOCKED SITE':away?'LOOK BACK AT THE SCREEN':paused?'PAUSED':({focus:session.timerMode==='flow'&&session.goalReached?'QUIET FLOW · STILL FOCUSING':`FOCUSING · ${Math.round(session.durationMs/60000)} MIN GOAL`,break:'TAKE A BREATHER',completed:session.kind==='break'?'BREAK COMPLETE':'FOCUS COMPLETE',failed:'DISTRACTION DETECTED',fault:'MONITORING INTERRUPTED'}[phase]||'READY');
   $('timer-settings-form').hidden=!setup; $('settings-fields').disabled=live; $('preferences-fields').disabled=live; $('progress-track').hidden=!live; $('focus-meta').hidden=!(live&&session.kind==='focus');
   const reason=session?.reason || (state.history?.[0]?.type==='cancelled'?state.history[0].reason:'');
   const warningHost=session?.siteWarning?.host||'the blocked website';
-  $('message').hidden=!reason&&setup&&!warning;
+  $('message').hidden=!away&&!reason&&setup&&!warning;
   const notificationNote=warning&&state.notificationPermission==='denied'?' Browser notifications are disabled; keep this popup open to see the countdown.':'';
-  $('message').textContent=warning?`Leave ${warningHost} within ${warningRemaining(session)} seconds. Focus time is frozen; leaving the site resumes this session.${notificationNote}`:paused?`${reason||'Timer paused. Resume manually when ready.'} Paused time is excluded.`:reason||(phase==='focus'?(session.timerMode==='flow'?'Flow continues quietly past your goal. Finish whenever you choose.':'A reminder marks your goal. Finish whenever you choose.'):'Breaks never earn focus rewards.');
+  $('message').textContent=warning?`Leave ${warningHost} within ${warningRemaining(session)} seconds. Focus time is frozen; leaving the site resumes this session.${notificationNote}`:away?`Look back at the screen within ${awayRemaining(session)} seconds. Focus time is frozen; looking back resumes this session.`:paused?`${reason||'Timer paused. Resume manually when ready.'} Paused time is excluded.`:reason||(phase==='focus'?(session.timerMode==='flow'?'Flow continues quietly past your goal. Finish whenever you choose.':'A reminder marks your goal. Finish whenever you choose.'):'Breaks never earn focus rewards.');
   const earned=Number(session?.rewardsAwarded)||0, durationSeconds=Math.floor((session?.durationMs||0)/1000);
   $('goal-label').textContent=phase==='focus'&&session?.goalReached&&session?.timerMode!=='flow'?`Goal complete · ${earned||1} reward${(earned||1)===1?'':'s'} earned`:phase==='focus'&&session?.timerMode==='flow'&&earned>0?`${earned} reward${earned===1?'':'s'} earned · next at ${formatTime((earned+1)*durationSeconds)}`:`Next reward at ${formatTime(durationSeconds)}`;
   $('mode-help').textContent=settings.timerMode==='flow'?'Quiet Flow: one reward per full selected interval and no goal interruption.':'Pomodoro: one reward per run with a reminder at the selected goal.';
@@ -118,8 +119,10 @@ function render(next) {
   $('claim-status').textContent=sending?'Sending one claim. Keep the device connected.':summary.unconfirmed?`${summary.unconfirmed} unconfirmed claim(s) reserved; no retry.`:summary.confirmed?`${summary.confirmed} device acknowledgement(s) recorded.`:hardware.connected?'Collect manually when ready.':'Connect a device to collect. Rewards stay saved.';
   $('collect').hidden=summary.available===0&&!sending; $('collect').disabled=!hardware.connected||sending||summary.available<1; $('collect').textContent=sending?'Collecting…':`Collect 1 reward${summary.available>1?` · ${summary.available} available`:''}`;
   $('hardware-status').textContent=hardware.connected?(hardware.mode==='test'?'USB · LED test only':'USB · BANK device'):'Device disconnected'; $('usb-settings').textContent=usbBusy?'Connecting…':hardware.connected?'Disconnect device':'Connect device'; $('usb-settings').disabled=usbBusy||sending; $('completed').textContent=`Total earned: ${Number(state.ledger?.earned)||0}`;
-  const signature=JSON.stringify({focusMinutes:settings.focusMinutes,breakMinutes:settings.breakMinutes,timerMode:settings.timerMode,sound:settings.sound,requireArduino:settings.requireArduino});
-  if (signature!==timerSignature && !draftDirty) { $('focus-minutes').value=settings.focusMinutes; $('break-minutes').value=settings.breakMinutes; $('timer-mode').value=settings.timerMode; $('sound-enabled').checked=settings.sound; $('arduino-required').checked=settings.requireArduino; timerSignature=signature; }
+  const signature=JSON.stringify({focusMinutes:settings.focusMinutes,breakMinutes:settings.breakMinutes,timerMode:settings.timerMode,sound:settings.sound,requireArduino:settings.requireArduino,eyeTracking:settings.eyeTracking});
+  if (signature!==timerSignature && !draftDirty) { $('focus-minutes').value=settings.focusMinutes; $('break-minutes').value=settings.breakMinutes; $('timer-mode').value=settings.timerMode; $('sound-enabled').checked=settings.sound; $('arduino-required').checked=settings.requireArduino; $('eye-tracking').checked=Boolean(settings.eyeTracking); timerSignature=signature; }
+  const eyeStatus={watching:'Camera on · watching for focus',starting:'Starting camera…',denied:'Camera blocked · click Set up camera','no-camera':'No camera found',error:'Eye tracking could not start'}[state.attentionStatus];
+  $('eye-tracking-status').textContent=eyeStatus||(settings.eyeTracking?'Camera turns on during focus':'');
   const access=state.pageWarningAccess||{}, accessKey=JSON.stringify({available:Boolean(access.available),granted:Boolean(access.granted),siteCount:Number(access.siteCount)||0});
   if (pageWarningStatusKey&&pageWarningStatusKey!==accessKey) pageWarningStatus='';
   pageWarningStatusKey=accessKey;
@@ -146,7 +149,7 @@ if (popup) {
     const result=request.call(chrome.permissions,{origins});
     Promise.resolve(result).then(granted=>{ state.pageWarningAccess={...(state.pageWarningAccess||{}),available:true,granted:Boolean(granted),siteCount:hosts.length}; pageWarningStatus=granted?'Enabled for your blocked sites.':'Permission not granted; browser notifications may also be disabled.'; pageWarningStatusKey=JSON.stringify({available:true,granted:Boolean(granted),siteCount:hosts.length}); render(state); }).catch(()=>{pageWarningStatus='Permission not granted; browser notifications may also be disabled.';render(state);});
   });
-  on('save-preferences','click',async()=>{if(await action('timer-settings',{settings:{sound:$('sound-enabled').checked,requireArduino:$('arduino-required').checked}}))$('preferences-saved').textContent='Preferences saved';}); for (const cue of ['success','failure']) on(`test-${cue}`,'click',()=>action('test-alert',{cue})); on('website-settings','click',()=>action('open-dashboard',{section:'websites'}));
+  on('save-preferences','click',async()=>{if(await action('timer-settings',{settings:{sound:$('sound-enabled').checked,requireArduino:$('arduino-required').checked,eyeTracking:$('eye-tracking').checked}}))$('preferences-saved').textContent='Preferences saved';}); on('camera-setup','click',()=>action('open-camera-setup')); for (const cue of ['success','failure']) on(`test-${cue}`,'click',()=>action('test-alert',{cue})); on('website-settings','click',()=>action('open-dashboard',{section:'websites'}));
   on('usb-settings','click',async()=>{showError();if(state.hardware.connected){await action('disconnect-device');return;}if(!navigator.serial){showError('Web Serial is unavailable. Use desktop Chrome.');return;}try{const port=await navigator.serial.requestPort();usbBusy=true;render(state);await action('connect-device',{portInfo:port.getInfo()});}catch(error){if(error.name!=='NotFoundError')showError(error.message);}finally{usbBusy=false;if(state)render(state);}}); setInterval(paintClock,250);
 } else on('website-settings-form','submit',async event=>{event.preventDefault();if(await action('website-settings',{settings:{blockedHosts:$('website-rules').value}}))$('website-saved').textContent='Saved';});
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes.state)ask('get').then(render).catch(error=>showError(error.message));}); setInterval(()=>ask('get').then(render).catch(error=>showError(error.message)),1000); action('get');

@@ -1,6 +1,7 @@
 import {alertCue} from './audio.js';
-import {Controller, LIVE, remaining, elapsed, isPaused, isWarning, needsDeviceLease} from './core.js';
+import {Controller, LIVE, remaining, elapsed, isPaused, isWarning, isAway, needsDeviceLease} from './core.js';
 import {PageWarnings,warningAccess} from './page-warnings.js';
+import {WarningWindow} from './warning-window.js';
 
 let device=null;
 let deviceMode='';
@@ -12,12 +13,22 @@ let focusedWindow=-1;
 let offscreenCreation;
 let graceTimer;
 let warningNotificationId;
+let awayTimer;
+let awayNotificationId;
+let attentionStatus='off', cameraOn=false;
 
 async function focusedTab() {
   const windows=await chrome.windows.getAll({populate:true,windowTypes:['normal','popup']});
   const focused=windows.find(w=>w.focused);
   if(!focused)return {urls:[]};
-  const tab=focused.tabs?.find(t=>t.active);
+  let tab=focused.tabs?.find(t=>t.active);
+  const popupUrl=[tab?.pendingUrl,tab?.url].find(url=>warningWindow.isPage(url));
+  if(popupUrl){
+    // The warning itself must never count as leaving the blocked website.
+    const source=new URL(popupUrl).searchParams.get('source');
+    const previous=source===null?null:windows.find(w=>w.id===Number(source));
+    tab=previous?.tabs?.find(t=>t.active);
+  }
   return {urls:[tab?.pendingUrl,tab?.url].filter(Boolean)};
 }
 function hardware() { return {connected:Boolean(device && deviceMode && Date.now()-deviceSeen<10000),mode:deviceMode||'disconnected'}; }
@@ -33,6 +44,7 @@ function command(command,session,value) {
 }
 async function schedule(session) {
   clearTimeout(graceTimer);
+  clearTimeout(awayTimer);
   if(isWarning(session)) {
     const deadline=session.siteWarning.deadlineAt;
     // The short timer is primary; persisted deadline + alarm survive worker loss.
@@ -40,9 +52,15 @@ async function schedule(session) {
     graceTimer.unref?.();
     await chrome.alarms.create('site-grace',{when:Math.max(Date.now()+1,deadline)});
   } else await chrome.alarms.clear('site-grace');
+  if(isAway(session)) {
+    const deadline=session.awayWarning.deadlineAt;
+    awayTimer=setTimeout(()=>event(()=>controller.tick()),Math.max(0,deadline-Date.now()));
+    awayTimer.unref?.();
+    await chrome.alarms.create('attention-grace',{when:Math.max(Date.now()+1,deadline)});
+  } else await chrome.alarms.clear('attention-grace');
   if(LIVE.has(session?.phase) || needsDeviceLease(session)) {
     await chrome.alarms.create('focus-check',{periodInMinutes:0.5});
-    if(LIVE.has(session?.phase) && !isPaused(session) && !isWarning(session) && !(session.kind==='focus' && session.timerMode==='pomodoro' && session.goalReached)) {
+    if(LIVE.has(session?.phase) && !isPaused(session) && !isWarning(session) && !isAway(session) && !(session.kind==='focus' && session.timerMode==='pomodoro' && session.goalReached)) {
       const target=session.kind==='focus'&&session.timerMode==='flow'?((session.rewardsAwarded||0)+1)*session.durationMs:session.durationMs;
       const next=session.accountedAt+Math.max(0,target-session.effectiveMs);
       await chrome.alarms.create('focus-end',{when:Math.max(Date.now()+1000,next)});
@@ -53,18 +71,48 @@ async function schedule(session) {
 }
 async function badge(state) {
   const s=state.session;
-  const text=isWarning(s)?'!':isPaused(s)?'II':LIVE.has(s?.phase)?String(s.kind==='focus'&&s.timerMode==='flow'?Math.floor(elapsed(s)/60):Math.max(1,Math.ceil(remaining(s)/60))):s?.delivery==='pending'?'✓':s?.phase==='failed'?'!':s?.phase==='fault'?'?':s?.phase==='completed'?'✓':'';
+  const text=isWarning(s)||isAway(s)?'!':isPaused(s)?'II':LIVE.has(s?.phase)?String(s.kind==='focus'&&s.timerMode==='flow'?Math.floor(elapsed(s)/60):Math.max(1,Math.ceil(remaining(s)/60))):s?.delivery==='pending'?'✓':s?.phase==='failed'?'!':s?.phase==='fault'?'?':s?.phase==='completed'?'✓':'';
   await chrome.action.setBadgeText({text});
-  await chrome.action.setBadgeBackgroundColor({color:isWarning(s)?'#946500':['failed','fault'].includes(s?.phase)?'#B94534':'#235C51'});
-  await chrome.action.setTitle({title:isWarning(s)?'Focus Machine · Leave blocked sites — open for countdown':isPaused(s)?'Focus Machine · emergency pause':LIVE.has(s?.phase)?`Focus Machine · ${s.timerMode==='flow'&&s.kind==='focus'?'flow':s.phase}${s.rewardEarned?' · reward ready':''}`:'Focus Machine'});
+  await chrome.action.setBadgeBackgroundColor({color:isWarning(s)||isAway(s)?'#946500':['failed','fault'].includes(s?.phase)?'#B94534':'#235C51'});
+  await chrome.action.setTitle({title:isWarning(s)?'Focus Machine · Leave blocked sites — open for countdown':isAway(s)?'Focus Machine · Look back at the screen':isPaused(s)?'Focus Machine · emergency pause':LIVE.has(s?.phase)?`Focus Machine · ${s.timerMode==='flow'&&s.kind==='focus'?'flow':s.phase}${s.rewardEarned?' · reward ready':''}`:'Focus Machine'});
 }
 async function ensureOffscreen() {
   const contexts=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[chrome.runtime.getURL('offscreen.html')]});
   if(!contexts.length) {
-    if(!offscreenCreation)offscreenCreation=chrome.offscreen.createDocument({url:'offscreen.html',reasons:['WORKERS','AUDIO_PLAYBACK'],justification:'Host a dedicated Web Serial worker so the granted USB connection survives closing the popup, and play requested timer alerts.'}).finally(()=>offscreenCreation=null);
+    if(!offscreenCreation)offscreenCreation=chrome.offscreen.createDocument({url:'offscreen.html',reasons:['WORKERS','AUDIO_PLAYBACK','USER_MEDIA'],justification:'Host a dedicated Web Serial worker so the granted USB connection survives closing the popup, play requested timer alerts, and run the optional on-device eye-tracking camera during focus.'}).finally(()=>offscreenCreation=null);
     await offscreenCreation;
   }
 }
+// Camera policy: on only while a focus block is running with eye tracking enabled,
+// including the away auto-pause (so looking back can resume). Serialized so a
+// quick start/pause sequence cannot leave the camera in the wrong state.
+function cameraWanted(s){return Boolean(s&&s.kind==='focus'&&s.phase==='focus'&&s.eyeTracking&&(!isPaused(s)||s.pauseKind==='away'));}
+let cameraQueue=Promise.resolve();
+function syncCamera(state,force=false){
+  const run=cameraQueue.then(()=>syncCameraNow(state,force));
+  cameraQueue=run.catch(()=>{});
+  return run;
+}
+async function syncCameraNow(state,force) {
+  const want=cameraWanted(state.session);
+  if(want===cameraOn&&!force)return;
+  if(want) {
+    await ensureOffscreen();
+    const {attentionBaseline}=await chrome.storage.local.get('attentionBaseline');
+    await chrome.runtime.sendMessage({target:'attention',type:'start',baseline:attentionBaseline??null});
+  } else {
+    // Never create the offscreen document just to stop the camera.
+    const contexts=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT'],documentUrls:[chrome.runtime.getURL('offscreen.html')]});
+    if(contexts.length)await chrome.runtime.sendMessage({target:'attention',type:'stop'});
+  }
+  cameraOn=want;
+  if(!want)attentionStatus='off';
+}
+// A new calibration applies to a camera that is already running.
+chrome.storage.onChanged?.addListener((changes,areaName)=>{
+  if(areaName!=='local'||!changes.attentionBaseline||!cameraOn)return;
+  chrome.runtime.sendMessage({target:'attention',type:'start',baseline:changes.attentionBaseline.newValue??null}).catch(console.warn);
+});
 async function sound(cue) {
   await ensureOffscreen();
   const reply=await chrome.runtime.sendMessage({target:'audio',type:'play',cue});
@@ -85,27 +133,43 @@ async function alertUser(state) {
 const controller=new Controller({
   now:()=>Date.now(),uuid:()=>crypto.randomUUID(),active:focusedTab,hardware,command,schedule,
   save:state=>chrome.storage.local.set({state}),
-  changed:state=>{badge(state).catch(console.warn);if(!isWarning(state.session)){const id=warningNotificationId||(state.session?.id?`site-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);warningNotificationId=null;}},
+  changed:state=>{warningWindow.refresh().catch(console.warn);badge(state).catch(console.warn);if(!isWarning(state.session)){const id=warningNotificationId||(state.session?.id?`site-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);warningNotificationId=null;}if(!isAway(state.session)){const id=awayNotificationId||(state.session?.id?`away-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);awayNotificationId=null;}syncCamera(state).catch(console.warn);},
   warning:state=>{const s=state.session;warningNotificationId=`site-warning-${s.id}`;chrome.notifications.create(warningNotificationId,{type:'basic',iconUrl:'assets/icon128.png',title:'Leave the blocked website',message:`Leave ${s.siteWarning.host} within 10 seconds to keep this focus session. Focus time is frozen.`,priority:2,requireInteraction:true}).catch(console.warn);},
+  awayWarning:state=>{const s=state.session;awayNotificationId=`away-warning-${s.id}`;chrome.notifications.create(awayNotificationId,{type:'basic',iconUrl:'assets/icon128.png',title:'Look back at the screen',message:'Focus time is frozen. Look back within 10 seconds or this session pauses.',priority:2}).catch(console.warn);},
   alert:state=>{alertUser(state).catch(console.error);},
 });
+const warningWindow=new WarningWindow(chrome,()=>controller.state.session);
 const pageWarnings=new PageWarnings(chrome,()=>controller.snapshot());
 const ready=(async()=>{
   await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
   const [saved,epoch,windows]=await Promise.all([
-    chrome.storage.local.get('state'),chrome.storage.session.get('browserSession'),chrome.windows.getAll({populate:true}),
+    chrome.storage.local.get(['state','eyeTrackingDefaultApplied']),chrome.storage.session.get('browserSession'),chrome.windows.getAll({populate:true}),
   ]);
   for(const w of windows){const t=w.tabs?.find(t=>t.active);if(t)activeTabs.set(w.id,t.id);if(w.focused)focusedWindow=w.id;}
   await chrome.storage.session.set({browserSession:true});
+  const applyCameraDefault=!saved.eyeTrackingDefaultApplied;
+  if(applyCameraDefault&&saved.state){
+    saved.state.settings={...saved.state.settings,eyeTracking:true};
+  }
   await controller.load(saved.state,Boolean(epoch.browserSession));
+  if(applyCameraDefault){
+    await chrome.storage.local.set({state:controller.state,eyeTrackingDefaultApplied:true});
+  }
   await badge(controller.snapshot());
+  await syncCamera(controller.snapshot()).catch(console.warn);
 })();
 function run(fn) { return ready.then(()=>controller.run(async()=>{
   try { return await fn(); }
   finally { pageWarnings.refresh().catch(console.warn); }
 })); }
 function event(fn) { run(fn).catch(error=>{
+  if(error?.code==='BROWSER_ACTIVITY_CHANGED'){
+    // Normal tab/window churn is retried, not converted into an emergency pause.
+    setTimeout(()=>event(()=>controller.tick()),250);
+    return;
+  }
   console.error(error);
+  chrome.storage.local.set({lastMonitoringError:{at:Date.now(),name:error?.name||'Error',message:String(error?.message||error).slice(0,500)}}).catch(console.warn);
   run(()=>controller.autoPause('Monitoring paused after an error. Resume manually when ready.')).catch(console.error);
 }); }
 
@@ -119,6 +183,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         const s=controller.state.session;
         if(LIVE.has(s?.phase)&&!isPaused(s)&&Date.now()-(s.accountedAt??s.lastCheckAt??Date.now())>=1000)await controller.tick();
         const snapshot=controller.snapshot();
+        snapshot.attentionStatus=attentionStatus;
         snapshot.activeBlocked=controller.findBlocked(await focusedTab(),snapshot.settings.blockedHosts);
         snapshot.pageWarningAccess=await warningAccess(chrome,snapshot.settings.blockedHosts);
         snapshot.notificationPermission=await chrome.notifications.getPermissionLevel?.().catch(()=> 'unknown')||'unknown';
@@ -165,6 +230,28 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         else await chrome.tabs.create({url});
         return controller.snapshot();
       }
+      case 'attention': {
+        if(sender.url!==chrome.runtime.getURL('offscreen.html'))throw new Error('Untrusted attention source.');
+        await controller.attention(Boolean(message.present));
+        return {ok:true};
+      }
+      case 'attention-status': {
+        if(sender.url!==chrome.runtime.getURL('offscreen.html'))throw new Error('Untrusted attention source.');
+        if(!['starting','watching','denied','no-camera','error','off'].includes(message.status))throw new Error('Unknown camera status.');
+        attentionStatus=message.status;
+        if(['error','denied','no-camera'].includes(message.status)&&cameraWanted(controller.state.session)){
+          await controller.autoPause('Camera monitoring stopped. Open Set up camera to fix access, then resume manually.','camera');
+        }
+        return {ok:true};
+      }
+      case 'open-camera-setup': {
+        const url=chrome.runtime.getURL('camera.html');
+        const tabs=await chrome.tabs.query({});
+        const existing=tabs.find(tab=>tab.url?.split('#')[0]===url);
+        if(existing){await chrome.tabs.update(existing.id,{active:true});await chrome.windows.update(existing.windowId,{focused:true});}
+        else await chrome.tabs.create({url});
+        return controller.snapshot();
+      }
       case 'test-alert':
         if(LIVE.has(controller.state.session?.phase))throw new Error('Test the sound before starting a block.');
         if(!['success','failure'].includes(message.cue))throw new Error('Choose a success or failure preview.');
@@ -202,7 +289,7 @@ chrome.runtime.onConnect.addListener(port=>{
 });
 
 function navigation(details) {
-  if(details.frameId!==0)return;
+  if(details.frameId!==0||warningWindow.isPage(details.url))return;
   controller.revision++;
   // Capture attention at event arrival, before later tab switches can overwrite it.
   const wasActive=activeTabs.get(focusedWindow)===details.tabId;
@@ -222,7 +309,7 @@ chrome.tabs.onActivated.addListener(info=>{
   const snapshot=Promise.all([chrome.tabs.get(info.tabId),chrome.windows.get(info.windowId)]).catch(()=>[null,null]);
   event(async()=>{
     const [tab,win]=await snapshot;
-    if((wasFocused||win?.focused) && tab)await controller.visit(tab.pendingUrl||tab.url||'');
+    if((wasFocused||win?.focused)&&tab&&!warningWindow.isPage(tab.pendingUrl)&&!warningWindow.isPage(tab.url))await controller.visit(tab.pendingUrl||tab.url||'');
   });
 });
 chrome.windows.onFocusChanged.addListener(windowId=>{
@@ -231,7 +318,7 @@ chrome.windows.onFocusChanged.addListener(windowId=>{
   const snapshot=chrome.tabs.query({windowId,active:true}).catch(()=>[]);
   event(async()=>{
     const [tab]=await snapshot;
-    if(tab){activeTabs.set(windowId,tab.id);await controller.visit(tab.pendingUrl||tab.url||'');}
+    if(tab){activeTabs.set(windowId,tab.id);if(!warningWindow.isPage(tab.pendingUrl)&&!warningWindow.isPage(tab.url))await controller.visit(tab.pendingUrl||tab.url||'');}
   });
 });
 chrome.tabs.onReplaced.addListener((added,removed)=>{
@@ -244,7 +331,11 @@ chrome.windows.onRemoved.addListener(id=>{
   event(async()=>{if(!(await chrome.windows.getAll({windowTypes:['normal']})).length && !isPaused(controller.state.session))await controller.autoPause('Chrome windows were closed. Your progress is saved. Resume manually when ready.');});
 });
 chrome.tabs.onRemoved?.addListener(()=>event(()=>controller.tick()));
-chrome.alarms.onAlarm.addListener(alarm=>{if(['focus-check','focus-end','site-grace'].includes(alarm.name))event(()=>controller.tick());});
+chrome.alarms.onAlarm.addListener(alarm=>{
+  if(['focus-check','focus-end','site-grace','attention-grace'].includes(alarm.name))event(()=>controller.tick());
+  // Re-arm the camera if Chrome closed the offscreen document during focus.
+  if(alarm.name==='focus-check')ready.then(()=>{const snapshot=controller.snapshot();if(cameraWanted(snapshot.session))return syncCamera(snapshot,true);}).catch(console.warn);
+});
 chrome.idle.onStateChanged.addListener(state=>{if(state==='locked'){controller.revision++;event(()=>controller.autoPause('The computer was locked. Your progress is saved. Resume manually when ready.'));}});
 chrome.runtime.onStartup.addListener(()=>event(()=>controller.autoPause('Chrome restarted. Your progress is saved. Resume manually when ready.')));
 chrome.notifications.onClicked.addListener(()=>chrome.action.openPopup().catch(console.warn));

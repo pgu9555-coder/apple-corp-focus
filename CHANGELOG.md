@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — 2026-11-10
+
+- Added on-device camera attention monitoring to focus sessions, enabled by default with a setting to turn it off. Added setup calibration and a practice flow for head turns and leaving the frame.
+- Added visible countdown windows for look-away and blocked-site grace periods, and a paused notice when looking away exceeds its deadline.
+- Added separate lower threshold for downward head tilt.
+- Retry browser-state reads during normal tab/window changes instead of treating transient activity races as monitor failures.
+- Pause the session and show a recovery prompt if camera access fails or frames stop arriving.
+- Kept the existing session, reward, website, logo, and Arduino release behavior.
+
+
 ## 0.5.5 — 2026-11-04
 
 - Added `firmware/FocusMachineServo`, Arduino Uno firmware that drives the dispenser servo and confirms each treat with the chute sensor. It stays in LED test mode until the servo positions are calibrated. It compiles for the Uno; it has not yet run on the real machine.

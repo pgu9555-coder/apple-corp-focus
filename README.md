@@ -1,10 +1,10 @@
-# Apple Corp Focus Machine v0.5.5
+# Apple Corp Focus Machine v0.6.0
 
 Apple Corp Focus Machine is an English-only Chrome extension for user-controlled focus sessions, local blocked-site checks, and optional Arduino reward collection. The timer, pause, break, reward, and device actions are available in the popup; **Edit websites** opens the separate website-rules page.
 
 ## Install from a release
 
-1. Download the `apple-corp-focus-v0.5.5.zip` asset from the [latest release](https://github.com/pgu9555-coder/apple-corp-focus/releases/latest).
+1. Download the `apple-corp-focus-v0.6.0.zip` asset from the [latest release](https://github.com/pgu9555-coder/apple-corp-focus/releases/latest).
 2. Extract it to a stable folder. Find the `extension` subfolder containing `manifest.json`.
 3. Open `chrome://extensions` in desktop Chrome and enable **Developer mode**.
 4. Choose **Load unpacked** and select that `extension` subfolder.
@@ -12,7 +12,7 @@ Apple Corp Focus Machine is an English-only Chrome extension for user-controlled
 
 Disable an older copy so that two timers are not running at the same time. Updating the same installation preserves schema-5 settings, blocked hosts, balances, claims, sessions, and history. A fresh folder may have separate local settings.
 
-To update an existing unpacked installation, finish or pause the current session, replace the files in its previously loaded extension folder, and click **Reload** on its Chrome extensions card. Check that the popup says **v0.5.5**. Legacy schema 1–4 data follows the one-time reset of rewards and history; settings are retained. Do not import older storage backups.
+To update an existing unpacked installation, finish or pause the current session, replace the files in its previously loaded extension folder, and click **Reload** on its Chrome extensions card. Check that the popup says **v0.6.0**. Legacy schema 1–4 data follows the one-time reset of rewards and history; settings are retained. Do not import older storage backups.
 
 ## Optional on-page countdown
 
@@ -21,6 +21,12 @@ Open **Settings → Enable on-page warnings** in the popup to request access to 
 When a focused tab visits an allowed-to-display blocked site during a focus session, a banner shows the remaining grace time. It does not read page contents, take keyboard focus, or alter the reward rules. The original ten-second deadline remains authoritative even if the page loads slowly or the banner cannot be displayed. Page restrictions, browser settings, or page behavior may prevent a visible banner.
 
 Declining or revoking website access does not disable the timer or blocked-site checks. The popup countdown and toolbar badge remain available, with browser notifications where Chrome and the operating system allow them. Neither notification permission nor automated tests guarantee that a notification will be visible. You can revoke granted site access in Chrome's extension settings.
+
+## Camera attention checks
+
+Camera monitoring is enabled by default during focus sessions. It runs locally in Chrome. Frames are not saved or uploaded. The detector checks face presence, head direction, and closed eyes; it is not precise eye-gaze tracking, so looking away with only the eyes may not be detected. Turn the setting off in **Settings → Pause when I look away** any time.
+
+Before your first focus session after installing or updating, open **Settings → Set up camera** once to grant camera access and calibrate your normal screen-facing posture. Updating an existing install enables the camera setting once; you can turn it back off at any time. A ten-second warning freezes focus time when the detector sees you looking away. Looking back resumes before the deadline; otherwise the focus session pauses. Camera or frame failures pause the session and require manual recovery. The setup page includes a practice flow to check turning and leaving the camera frame before a real session. The detection model is bundled in the extension and runs on-device.
 
 ## Session rules
 
@@ -50,4 +56,4 @@ node tests/independent-acceptance.mjs
 
 Tests use simulated clocks and browser/serial interfaces. They do not prove a real installed toolbar session, uninterrupted long-duration timing, or physical hardware behavior. See `TEST_RESULTS.md` for the current run and its limits. This repository is released under the MIT License; see `PRIVACY.md` for local data handling.
 
-Pushes and pull requests run the test suite. Maintainers publish a release by updating the version and pushing its matching `v` tag, for example `v0.5.5`; the release workflow tests again, checks the manifest version, and attaches an installable ZIP containing the extension and the Arduino firmware. Ordinary pushes do not create releases. The tests are available in the repository/source archives.
+Pushes and pull requests run the test suite. Maintainers publish a release by updating the version and pushing its matching `v` tag, for example `v0.6.0`; the release workflow tests again, checks the manifest version, and attaches an installable ZIP containing the extension and the Arduino firmware. Ordinary pushes do not create releases. The tests are available in the repository/source archives.

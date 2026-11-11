@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Focus Machine warning</title>
+<style>
+:root{color-scheme:light;font:15px system-ui,sans-serif;color:#283129;background:#f6f5ef}
+body{margin:0;padding:18px}
+main{border:1px solid #d6c491;border-top:5px solid #a46713;border-radius:12px;padding:14px 16px;background:#fffdf6}
+main[data-kind="ended"]{border-top-color:#a33b2d}
+small{font-weight:750;letter-spacing:.08em;color:#70501a}
+h1{margin:6px 0;font-size:23px;line-height:1.15}
+#count{font-size:38px;font-weight:750;font-variant-numeric:tabular-nums;color:#805019}
+p{margin:8px 0;line-height:1.4;overflow-wrap:anywhere}
+button{margin-top:8px;border:1px solid #235c51;border-radius:8px;padding:7px 12px;background:#235c51;color:white;font:inherit;font-weight:650}
+</style>
+</head>
+<body>
+<main id="notice">
+  <small>APPLE CORP · FOCUS MACHINE</small>
+  <h1 id="title">Checking your focus session…</h1>
+  <div id="count" role="timer" hidden></div>
+  <p id="message" role="status"></p>
+  <button id="dismiss" type="button" hidden>Close</button>
+</main>
+<script type="module" src="focus-warning.js"></script>
+</body>
+</html>

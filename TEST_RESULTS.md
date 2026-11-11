@@ -1,8 +1,16 @@
-# Apple Corp Focus Machine v0.5.3 verification
+# Apple Corp Focus Machine verification
 
 ## Status
 
-On 2026-11-01, `node --test tests/*.test.js` passed 114 tests with zero failures after review. `node tests/independent-acceptance.mjs` passed seven additional controller checks. These are controlled automated checks, not a claim of real installed-browser or physical-hardware validation.
+Historical v0.5.3 run: On 2026-11-01, `node --test tests/*.test.js` passed 114 tests and the independent acceptance script passed seven checks. These controlled checks do not establish installed-browser or physical-hardware behavior.
+
+## v0.6.0 release checks
+
+On 2026-11-10, `node --test tests/*.test.js` passed **129 tests** with zero failures. This includes new simulated checks for default-on camera settings, preserving a later opt-out, camera errors and stalled frames, camera permission races, head-pose thresholds, away grace/recovery, popup lifecycle, site-warning priority, and browser activity races.
+
+`node tests/independent-acceptance.mjs` passed seven checks with zero failures. No physical camera/face input, installed Chrome warning flow, notification delivery, or Arduino hardware was exercised end to end.
+
+## v0.5.3 historical regression checks
 
 ## Required checks
 
@@ -28,4 +36,4 @@ UI tests run the actual popup script against DOM mocks; these checks do not repl
 
 ## Boundaries
 
-The automated checks use controlled clocks and mocked browser/serial APIs. Browser notification delivery, content-script injection, and alarm timing depend on Chrome, page restrictions, and the operating system. Real Chrome toolbar behavior, user-granted website permissions, audible output, and long-duration operation remain unverified. No physical Arduino, servo, LCD, sensor, power circuit, speaker output, or candy mechanism is verified by these tests. The included firmware is an LED-only protocol sketch.
+The automated checks use controlled clocks and mocked browser/serial APIs. Browser notification delivery, content-script injection, and alarm timing depend on Chrome, page restrictions, and the operating system. Real Chrome toolbar behavior, user-granted website permissions, audible output, and long-duration operation remain unverified. No physical Arduino, servo, LCD, sensor, power circuit, speaker output, or candy mechanism is verified by these tests. The included firmware includes the LED-only protocol sketch and a servo dispenser sketch; physical dispenser operation remains unverified.
