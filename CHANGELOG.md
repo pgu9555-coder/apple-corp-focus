@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.3 — 2026-11-11
+
+- Firmware ignores the IR sensor while the disc is still moving (first 500 ms), so the disc passing the sensor is no longer counted as a treat.
+- When the sensor already reads blocked before dispensing, the LCD shows "Sensor blocked / Check IR sensor" (nothing moves).
+- The popup now explains every Collect result: treat dispensed, out of treats, sensor blocked, treat stuck, no reply, or test mode.
+
+## 0.6.2 — 2026-11-11
+
+- After Collect, the dispenser waits up to 10 seconds at the outlet for the IR beam to break. If no treat passes in that time, the LCD shows "No treats left / Please refill" and the popup says the machine is out of treats. The reward is still not resent automatically.
+
+## 0.6.1 — 2026-11-11
+
+- The dispenser's 16x2 LCD now mirrors the extension timer: focus and break countdowns, Quiet Flow time to the next reward, blocked-site and look-away warnings, "Paused", and rewards ready to collect. The extension sends a short `SHOW` frame on every state change, when the device connects and every 30 seconds; the Arduino counts between frames. Display failures never affect timing or rewards.
+- Firmware: `USE_LCD` is now on by default (needs the "LiquidCrystal I2C" library). Chute sensor moved to D3 and the D7 servo power switch removed to match the current circuit (servo on the 5 V rail).
+
 ## 0.6.0 — 2026-11-10
 
 - Added on-device camera attention monitoring to focus sessions, enabled by default with a setting to turn it off. Added setup calibration and a practice flow for head turns and leaving the frame.

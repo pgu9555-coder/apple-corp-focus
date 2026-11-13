@@ -1,5 +1,5 @@
 import {alertCue} from './audio.js';
-import {Controller, LIVE, remaining, elapsed, isPaused, isWarning, isAway, needsDeviceLease} from './core.js';
+import {Controller, LIVE, remaining, elapsed, isPaused, isWarning, isAway, needsDeviceLease, lcdFrame} from './core.js';
 import {PageWarnings,warningAccess} from './page-warnings.js';
 import {WarningWindow} from './warning-window.js';
 
@@ -41,6 +41,19 @@ function command(command,session,value) {
     try { device.postMessage({type:'command',requestId,command,session,value}); }
     catch(error){clearTimeout(timer);requests.delete(requestId);reject(error);}
   });
+}
+// Mirror the popup timer on the dispenser's LCD. The Arduino counts down by
+// itself between frames, so a frame is only sent on state changes, on the
+// 30-second focus check, and when the device connects. Failures are ignored:
+// the LCD is a display only and never affects timing or rewards.
+let lcdLast='',lcdSentAt=0,lcdTrailing=null;
+function syncLcd(state,force=false){
+  if(!state||!hardware().connected)return;
+  const frame=lcdFrame(state),now=Date.now();
+  if(!force&&frame===lcdLast&&now-lcdSentAt<15000)return;
+  if(!force&&now-lcdSentAt<1000){clearTimeout(lcdTrailing);lcdTrailing=setTimeout(()=>syncLcd(controller.snapshot(),true),1000-(now-lcdSentAt));lcdTrailing.unref?.();return;}
+  clearTimeout(lcdTrailing);lcdLast=frame;lcdSentAt=now;
+  command('SHOW','0',frame).catch(()=>{});
 }
 async function schedule(session) {
   clearTimeout(graceTimer);
@@ -133,7 +146,7 @@ async function alertUser(state) {
 const controller=new Controller({
   now:()=>Date.now(),uuid:()=>crypto.randomUUID(),active:focusedTab,hardware,command,schedule,
   save:state=>chrome.storage.local.set({state}),
-  changed:state=>{warningWindow.refresh().catch(console.warn);badge(state).catch(console.warn);if(!isWarning(state.session)){const id=warningNotificationId||(state.session?.id?`site-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);warningNotificationId=null;}if(!isAway(state.session)){const id=awayNotificationId||(state.session?.id?`away-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);awayNotificationId=null;}syncCamera(state).catch(console.warn);},
+  changed:state=>{syncLcd(state);warningWindow.refresh().catch(console.warn);badge(state).catch(console.warn);if(!isWarning(state.session)){const id=warningNotificationId||(state.session?.id?`site-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);warningNotificationId=null;}if(!isAway(state.session)){const id=awayNotificationId||(state.session?.id?`away-warning-${state.session.id}`:null);if(id)chrome.notifications.clear?.(id)?.catch(console.warn);awayNotificationId=null;}syncCamera(state).catch(console.warn);},
   warning:state=>{const s=state.session;warningNotificationId=`site-warning-${s.id}`;chrome.notifications.create(warningNotificationId,{type:'basic',iconUrl:'assets/icon128.png',title:'Leave the blocked website',message:`Leave ${s.siteWarning.host} within 10 seconds to keep this focus session. Focus time is frozen.`,priority:2,requireInteraction:true}).catch(console.warn);},
   awayWarning:state=>{const s=state.session;awayNotificationId=`away-warning-${s.id}`;chrome.notifications.create(awayNotificationId,{type:'basic',iconUrl:'assets/icon128.png',title:'Look back at the screen',message:'Focus time is frozen. Look back within 10 seconds or this session pauses.',priority:2}).catch(console.warn);},
   alert:state=>{alertUser(state).catch(console.error);},
@@ -273,6 +286,7 @@ chrome.runtime.onConnect.addListener(port=>{
       deviceMode=['test','live'].includes(message.mode)?message.mode:'';deviceSeen=Date.now();
       event(async()=>{
         await controller.tick();
+        syncLcd(controller.snapshot(),true);
       });
     } else if(message.type==='reply') {
       const p=requests.get(message.requestId);
@@ -332,7 +346,7 @@ chrome.windows.onRemoved.addListener(id=>{
 });
 chrome.tabs.onRemoved?.addListener(()=>event(()=>controller.tick()));
 chrome.alarms.onAlarm.addListener(alarm=>{
-  if(['focus-check','focus-end','site-grace','attention-grace'].includes(alarm.name))event(()=>controller.tick());
+  if(['focus-check','focus-end','site-grace','attention-grace'].includes(alarm.name))event(async()=>{await controller.tick();syncLcd(controller.snapshot(),alarm.name==='focus-check');});
   // Re-arm the camera if Chrome closed the offscreen document during focus.
   if(alarm.name==='focus-check')ready.then(()=>{const snapshot=controller.snapshot();if(cameraWanted(snapshot.session))return syncCamera(snapshot,true);}).catch(console.warn);
 });

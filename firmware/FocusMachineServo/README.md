@@ -12,12 +12,29 @@ hardware yet.
 | Uno pin | Connects to | Notes |
 |---|---|---|
 | D9 | Servo signal | |
-| D7 | MOSFET gate for servo power (HIGH = on) | Set `SERVO_ENABLE_PIN = -1` if there is no switch |
-| D2 | Chute exit sensor output | Set `SENSOR_ACTIVE_LOW` to match the sensor |
+| D3 | Chute exit sensor (FC-51) output | Set `SENSOR_ACTIVE_LOW` to match the sensor |
+| A4 / A5 | I2C LCD SDA / SCL | Only used when `USE_LCD` is 1 |
+| 5V | Servo, sensor and LCD power (breadboard rail, capacitor near the servo) | No power switch: `SERVO_ENABLE_PIN = -1` |
 | GND | Servo supply ground | Grounds must be joined |
 
 Power the servo from 4.8 to 6 V. Do not connect a 9 V battery straight to the
 servo; put a 5 V regulator in between.
+
+## LCD timer
+
+With `USE_LCD 1` (the default) the 16x2 I2C LCD shows what the extension timer shows:
+
+| LCD | Meaning |
+|---|---|
+| `Focus      24:59` | Focus time left (Quiet Flow after the first goal: time to the next reward) |
+| `Break       4:59` | Break time left |
+| `Leave site  0:08` / `Look back   0:08` | Warning countdown |
+| `Paused` on line 2 | Session paused |
+| `Rewards: 3` on line 2 | Rewards ready to collect |
+
+Install **LiquidCrystal I2C** (Frank de Brabander) in Library Manager. If the screen stays blank, change `0x27` to `0x3F` in the `lcd(...)` line; if it shows only blocks, turn the contrast screw on the backpack. Set `USE_LCD 0` if no LCD is connected.
+
+The LCD only displays; timing and rewards stay in the extension.
 
 ## Safe default
 
@@ -66,7 +83,7 @@ Do this with the horn off the rotor (or the mechanism empty), servo power on.
 |---|---|---|
 | `DISPENSED` | The sensor saw a treat pass | Confirmed |
 | `ERR CHUTE_BLOCKED` | The chute was blocked before the start, so nothing moved | Unconfirmed |
-| `ERR NO_PASSAGE` | No treat was seen within 1.2 s | Unconfirmed |
+| `ERR NO_PASSAGE` | No treat broke the IR beam within 10 s: out of treats. LCD shows "No treats left / Please refill" | Unconfirmed: "machine is out of treats" |
 | `ERR CHUTE_JAM` | Blocked for 300 ms; servo power was cut | Unconfirmed |
 | `ERR FAULT_RESET_REQUIRED` | An earlier jam has not been cleared | Unconfirmed |
 

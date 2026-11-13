@@ -8,11 +8,17 @@
 
    Wiring (edit the pin constants if yours differ):
      D9  servo signal
-     D7  servo power enable (MOSFET gate, HIGH = servo powered). Set
-         SERVO_ENABLE_PIN to -1 if the servo is powered all the time.
-     D2  chute exit sensor (IR break-beam or FC-51), digital output
+     D3  chute exit sensor (FC-51), digital output
+     I2C LCD on A4 (SDA) / A5 (SCL), only used when USE_LCD is 1
+     The servo is powered straight from the 5 V rail with a capacitor across
+     it, so there is no power switch (SERVO_ENABLE_PIN = -1). To add a MOSFET
+     switch later, wire its gate to a free pin and set SERVO_ENABLE_PIN to it.
      Servo power must come from a 5 V (4.8-6 V) source, never straight from
      a 9 V battery. Join the servo supply ground to the Uno GND.
+
+   LCD: with USE_LCD 1 the 16x2 I2C LCD mirrors the extension timer
+   ("Focus 24:59", "Break 4:59", "Paused", rewards to collect). The
+   extension sends SHOW frames; the board counts between them.
 
    Status: compiles for arduino:avr:uno (arduino-cli 1.5.1, Servo 1.3.0).
    Not yet run on real hardware.
@@ -24,8 +30,8 @@
 
 // ---------------- Configuration ----------------
 const uint8_t  SERVO_PIN        = 9;
-const int8_t   SERVO_ENABLE_PIN = 7;     // -1 = no power switch
-const uint8_t  SENSOR_PIN       = 2;
+const int8_t   SERVO_ENABLE_PIN = -1;    // -1 = no power switch (servo wired straight to 5 V)
+const uint8_t  SENSOR_PIN       = 3;     // IR sensor OUT is wired to D3
 const bool     SENSOR_ACTIVE_LOW = true; // true: LOW means a treat blocks the sensor
 const bool     USE_SENSOR       = true;  // false: reply DISPENSED after the motion, unverified
 
@@ -43,9 +49,11 @@ const uint16_t ARM_CLEAR_MS     = 150;   // chute must read clear this long befo
 const uint16_t ARM_TIMEOUT_MS   = 1000;
 const uint8_t  FILTER_MS        = 3;     // ignore sensor changes shorter than this
 const uint16_t JAM_MS           = 300;   // continuously blocked this long = jam
-const uint16_t RELEASE_DWELL_MS = 1200;  // wait this long at the outlet for a passage
+const uint16_t RELEASE_DWELL_MS = 10000; // wait up to 10 s at the outlet for the IR beam to break;
+                                         // no break in time = the machine is out of treats
 
-#define USE_LCD 0                        // 1 = show status on a 16x2 I2C LCD
+#define USE_LCD 1                        // 1 = 16x2 I2C LCD shows the focus/break timer (needs the
+                                         // "LiquidCrystal I2C" library); 0 = no LCD
 #if USE_LCD
 #include <LiquidCrystal_I2C.h>
 LiquidCrystal_I2C lcd(0x27, 16, 2);      // common backpack address; some use 0x3F
@@ -112,11 +120,69 @@ int rememberPending(const char* id) {
 void setResult(int base, char code) { EEPROM.update(base + 33, code); }
 
 // ---------------- Hardware helpers ----------------
+unsigned long overlayUntil = 0;  // a status message stays on the LCD until this time
+long lastShown = -1;             // last timer second drawn, so the LCD only redraws on change
+
 void status(const char* line1, const char* line2) {
 #if USE_LCD
   lcd.clear(); lcd.setCursor(0, 0); lcd.print(line1); lcd.setCursor(0, 1); lcd.print(line2);
+  overlayUntil = millis() + 3000; if (!overlayUntil) overlayUntil = 1;
+  lastShown = -1;
 #else
   (void)line1; (void)line2;
+#endif
+}
+
+// ---------------- LCD timer (SHOW frames from the extension) ----------------
+// Value format MODE_SECONDS_DIRECTION_REWARDS, e.g. F_1499_D_3:
+//   MODE  I idle, F focus, B break, W blocked-site warning, A look-away warning
+//   DIRECTION  D counts down, U counts up, S stopped (paused or idle)
+// The board keeps counting between frames; the extension resyncs every 30 s.
+char dispMode = 'I', dispDir = 'S';
+unsigned long dispSecs = 0, dispAt = 0;
+uint8_t dispRewards = 0;
+
+bool parseShow(const char* v) {
+  if (!v[0] || !strchr("IFBWA", v[0]) || v[1] != '_') return false;
+  const char* p = v + 2; unsigned long secs = 0; uint8_t n = 0;
+  while (*p >= '0' && *p <= '9') { secs = secs * 10 + (uint8_t)(*p - '0'); p++; if (++n > 6) return false; }
+  if (!n || *p++ != '_') return false;
+  if (!*p || !strchr("DUS", *p)) return false;
+  const char dir = *p++;
+  if (*p++ != '_') return false;
+  uint8_t rewards = 0; n = 0;
+  while (*p >= '0' && *p <= '9') { rewards = rewards * 10 + (uint8_t)(*p - '0'); p++; if (++n > 2) return false; }
+  if (!n || *p) return false;
+  dispMode = v[0]; dispSecs = secs; dispDir = dir; dispRewards = rewards; dispAt = millis();
+  return true;
+}
+unsigned long shownSeconds() {
+  const unsigned long passed = (millis() - dispAt) / 1000;
+  if (dispDir == 'D') return dispSecs > passed ? dispSecs - passed : 0;
+  if (dispDir == 'U') return dispSecs + passed;
+  return dispSecs;
+}
+void drawTimer(bool force) {
+#if USE_LCD
+  if (faultLatched) return;                            // keep the jam message up
+  if (overlayUntil) {
+    if ((long)(millis() - overlayUntil) < 0) return;   // a status message is showing
+    overlayUntil = 0; force = true;
+  }
+  const unsigned long s = shownSeconds();
+  if (!force && (long)s == lastShown) return;
+  lastShown = (long)s;
+  char line1[17], line2[17], clock[12];
+  snprintf(clock, sizeof(clock), "%lu:%02lu", s / 60, s % 60);
+  const char* label = dispMode == 'F' ? "Focus" : dispMode == 'B' ? "Break" :
+                      dispMode == 'W' ? "Leave site" : dispMode == 'A' ? "Look back" : "Ready";
+  if (dispMode == 'I') snprintf(line1, sizeof(line1), "%-16s", calibrated() ? "Ready" : "Ready (test)");
+  else snprintf(line1, sizeof(line1), "%-10s%6s", label, clock);
+  if (dispMode != 'I' && dispDir == 'S') snprintf(line2, sizeof(line2), "%-16s", "Paused");
+  else snprintf(line2, sizeof(line2), "Rewards: %-7u", (unsigned)dispRewards);
+  lcd.setCursor(0, 0); lcd.print(line1); lcd.setCursor(0, 1); lcd.print(line2);
+#else
+  (void)force;
 #endif
 }
 bool rawBlocked() { return (digitalRead(SENSOR_PIN) == LOW) == SENSOR_ACTIVE_LOW; }
@@ -155,14 +221,17 @@ bool chuteArmed() {
 
 // One dispensing cycle. Returns R_DISPENSED, R_NO_PASSAGE or R_JAM.
 char dispenseOnce() {
-  status("Dispensing...", "");
+  status("Dispensing...", "Waiting for treat");
   servoStart(LOAD_US);
   servo.writeMicroseconds(RELEASE_US);
   resetFilter();
   bool sawBlock = false, passage = false; unsigned long blockStart = 0;
   const unsigned long start = millis();
+  bool watching = false;
   while (millis() - start < (unsigned long)TRAVEL_MS + RELEASE_DWELL_MS) {
     if (!USE_SENSOR) continue;
+    if (millis() - start < TRAVEL_MS) continue;         // ignore the disc moving past the sensor
+    if (!watching) { resetFilter(); watching = true; }
     if (sensorBlocked()) {
       if (!sawBlock) { sawBlock = true; blockStart = millis(); }
       if (millis() - blockStart >= JAM_MS) {          // stuck treat: cut power, do not push again
@@ -176,8 +245,10 @@ char dispenseOnce() {
   delay(TRAVEL_MS);
   servoStop();
   if (!USE_SENSOR) { status("Done (no sensor)", ""); return R_DISPENSED; }
-  status(passage ? "Enjoy your treat" : "No treat seen", passage ? "" : "Check the tray");
-  return passage ? R_DISPENSED : R_NO_PASSAGE;
+  if (passage) { status("Enjoy your treat", ""); return R_DISPENSED; }
+  status("No treats left", "Please refill");          // nothing broke the beam within 10 s
+  overlayUntil = millis() + 10000;                    // keep this message up longer
+  return R_NO_PASSAGE;
 }
 
 void replyStored(const char* seq, const char* id, char code) {
@@ -200,6 +271,10 @@ void process(char* frame) {
   if (strcmp(id, "0") && !claimId(id)) return;
 
   if (!strcmp(command, "HELLO")) { reply(seq, "ACK", id, calibrated() ? "READY_BANK" : "READY_BANK_TEST"); return; }
+  if (!strcmp(command, "SHOW")) {
+    if (strcmp(id, "0") || !parseShow(value)) { reply(seq, "ERR", id, "BAD_SHOW"); return; }
+    drawTimer(true); reply(seq, "ACK", id, "SHOWN"); return;
+  }
   if (strcmp(command, "CLAIM")) { reply(seq, "ERR", id, "UNKNOWN_COMMAND"); return; }
   if (!claimId(id) || strcmp(value, "1")) { reply(seq, "ERR", id, "BAD_CLAIM"); return; }
 
@@ -213,7 +288,10 @@ void process(char* frame) {
   }
   if (faultLatched) { reply(seq, "ERR", id, "FAULT_RESET_REQUIRED"); return; }
   if (benchActive) { reply(seq, "ERR", id, "BENCH_MODE"); return; }
-  if (!chuteArmed()) { reply(seq, "ERR", id, "CHUTE_BLOCKED"); return; }  // nothing moved
+  if (!chuteArmed()) {                                 // nothing moved
+    status("Sensor blocked", "Check IR sensor"); overlayUntil = millis() + 10000;
+    reply(seq, "ERR", id, "CHUTE_BLOCKED"); return;
+  }
 
   const int base = rememberPending(id);               // persist before any motion
   digitalWrite(LED_BUILTIN, HIGH);
@@ -262,7 +340,7 @@ void setup() {
 #if USE_LCD
   lcd.init(); lcd.backlight();
 #endif
-  status("Locked in Machine", calibrated() ? "Ready" : "Test mode");
+  status("Apple Corps", calibrated() ? "Ready" : "Test mode");
 }
 
 void loop() {
@@ -279,4 +357,5 @@ void loop() {
     }
   }
   if (ledUntil && (long)(millis() - ledUntil) >= 0) { digitalWrite(LED_BUILTIN, LOW); ledUntil = 0; }
+  drawTimer(false);
 }

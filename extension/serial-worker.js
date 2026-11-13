@@ -23,7 +23,7 @@ function accept(line){
   const p=pending.get(reply.sequence);if(!p||p.session!==reply.session)return;
   clearTimeout(p.timer);pending.delete(reply.sequence);
   if(reply.type==='ERR'){p.reject(new Error(`Device: ${reply.value}`));return;}
-  const expected={HELLO:['READY_BANK_TEST','READY_BANK','READY_TEST','READY'],CLAIM:['SIMULATED','DISPENSED']};
+  const expected={HELLO:['READY_BANK_TEST','READY_BANK','READY_TEST','READY'],CLAIM:['SIMULATED','DISPENSED'],SHOW:['SHOWN']};
   if(!expected[p.command]?.includes(reply.value)){p.reject(new Error('Unexpected device acknowledgement.'));return;}
   p.resolve(reply.value);
 }
@@ -71,8 +71,9 @@ self.onmessage=async({data})=>{
     else if(data.type==='connect')value=await connect(data.portInfo);
     else if(data.type==='disconnect'){await disconnect();value=true;}
     else if(data.type==='command'){
-      if(data.command!=='CLAIM'||!mode)throw new Error('Unsupported or disconnected reward command.');
-      value=await request('CLAIM',data.session,data.value);
+      if(!['CLAIM','SHOW'].includes(data.command)||!mode)throw new Error('Unsupported or disconnected reward command.');
+      if(data.command==='SHOW'&&(data.session!=='0'||!/^[IFBWA]_[0-9]{1,6}_[DUS]_[0-9]{1,2}$/.test(String(data.value))))throw new Error('Invalid display frame.');
+      value=await request(data.command,data.session,data.value);
     }else throw new Error('Unknown USB worker action.');
     postMessage({id:data.id,ok:true,value});
   }catch(error){postMessage({id:data.id,ok:false,error:error.message});}
