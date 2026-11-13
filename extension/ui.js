@@ -7,6 +7,10 @@ if (document.body?.classList.contains('popup')) {
 const $=id=>document.getElementById(id), popup=Boolean($('timer'));
 let state=null, timerSignature='', websiteSignature='', presetSignature='', usbBusy=false, chooseNextPort=false, pageWarningStatus='', pageWarningStatusKey='';
 let saveTimer=null, saveVersion=0, draftDirty=false, pendingSave=null;
+// Custom is highlighted after the user picks it or types their own minutes; a preset click clears it.
+let customMode=false;
+// The first-run eye-tracking question opens at most once per popup open.
+let eyeChoiceShown=false;
 
 export async function ask(type,extra={}) {
   const result=await chrome.runtime.sendMessage({target:'worker',type,...extra});
@@ -29,7 +33,10 @@ const presetLabel=p=>`${p.focusMinutes} / ${p.breakMinutes} min`;
 function renderPresets(settings) {
   const row=$('preset-row'); if (!row) return;
   const presets=state?.presets||[];
-  const signature=JSON.stringify({presets,focusMinutes:Number(settings?.focusMinutes),breakMinutes:Number(settings?.breakMinutes)});
+  const focusMinutes=Number(settings?.focusMinutes), breakMinutes=Number(settings?.breakMinutes);
+  const matches=preset=>focusMinutes===preset.focusMinutes && breakMinutes===preset.breakMinutes;
+  const anyMatch=presets.some(matches);
+  const signature=JSON.stringify({presets,focusMinutes,breakMinutes,customMode});
   if (signature===presetSignature && row.children.length) return;
   presetSignature=signature;
   row.replaceChildren();
@@ -37,15 +44,27 @@ function renderPresets(settings) {
     const wrap=document.createElement('div'); wrap.className='preset-chip-wrap';
     const use=document.createElement('button'); use.type='button'; use.className='chip';
     use.textContent=presetLabel(preset); use.setAttribute('aria-label',`Use ${presetLabel(preset)} preset`);
-    if (Number(settings?.focusMinutes)===preset.focusMinutes && Number(settings?.breakMinutes)===preset.breakMinutes) use.classList.add('active');
-    use.addEventListener('click',()=>{ if (LIVE.has(state?.session?.phase)) return; $('focus-minutes').value=preset.focusMinutes; $('break-minutes').value=preset.breakMinutes; markDraft(); queueSettingsSave(); });
+    if (!customMode && matches(preset)) use.classList.add('active');
+    use.addEventListener('click',()=>{ if (LIVE.has(state?.session?.phase)) return; customMode=false; $('focus-minutes').value=preset.focusMinutes; $('break-minutes').value=preset.breakMinutes; markDraft(); renderPresets({focusMinutes:preset.focusMinutes,breakMinutes:preset.breakMinutes}); queueSettingsSave(); });
     const remove=document.createElement('button'); remove.type='button'; remove.className='preset-delete'; remove.textContent='×';
     remove.title=`Delete ${presetLabel(preset)} preset`; remove.setAttribute('aria-label',`Delete ${presetLabel(preset)} preset`);
     remove.addEventListener('click',event=>{event.stopPropagation(); action('delete-preset',{id:preset.id});});
     wrap.append(use,remove); row.append(wrap);
   }
   const custom=document.createElement('button'); custom.type='button'; custom.className='chip custom-chip'; custom.textContent='Custom';
-  custom.addEventListener('click',()=>{$('focus-minutes').focus();$('focus-minutes').select();}); row.append(custom);
+  if (customMode || !anyMatch) custom.classList.add('active');
+  custom.addEventListener('click',()=>{ customMode=true; renderPresets(state?.settings); $('focus-minutes').focus(); $('focus-minutes').select(); }); row.append(custom);
+}
+// Hand-typed minutes are a custom timer, so Custom takes the highlight from the matching preset.
+function minutesEdited(id) { if (id!=='timer-mode' && !customMode) { customMode=true; renderPresets(state?.settings); } }
+function maybeAskEyeChoice(next) {
+  const dialog=$('eye-choice-dialog');
+  if (!dialog || next?.eyeTrackingChoiceMade!==false || eyeChoiceShown || dialog.open || typeof dialog.showModal!=='function') return;
+  eyeChoiceShown=true; dialog.showModal();
+}
+async function answerEyeChoice(enabled) {
+  await action('eye-tracking-choice',{enabled});
+  $('eye-choice-dialog').close?.();
 }
 function preview() {
   if (!popup) return;
@@ -131,7 +150,7 @@ function render(next) {
     $('enable-page-warnings').disabled=!access.available;
     $('page-warning-status').textContent=pageWarningStatus||(access.granted?`Enabled for ${access.siteCount||0} blocked site${access.siteCount===1?'':'s'}`:access.available?'Optional: allow a countdown banner on blocked sites.':'Browser permission support unavailable.');
   }
-  $('history-panel').hidden=!(state.history||[]).length; renderHistory(); renderPresets(settings); preview(); paintClock();
+  $('history-panel').hidden=!(state.history||[]).length; renderHistory(); renderPresets(settings); preview(); paintClock(); maybeAskEyeChoice(state);
 }
 async function action(type,extra={}) { showError(); try { const result=await ask(type,extra); render(result); return true; } catch (error) { showError(error.message); return false; } }
 const on=(id,event,fn)=>$(id)?.addEventListener(event,fn);
@@ -139,7 +158,8 @@ if (popup) {
   on('start','click',async()=>{ const settings=timerSettings(); if (!settings) return; clearTimeout(saveTimer); saveVersion++; draftDirty=false; await (pendingSave||Promise.resolve()); await action('start',{kind:'focus',settings}); });
   on('break','click',()=>action('start',{kind:'break'})); on('new-focus','click',()=>action('prepare-focus')); on('finish','click',()=>action(state?.session?.kind==='focus'&&state.session.goalReached&&state.restMs>0?'finish-break':'finish')); on('finish-without-break','click',()=>action('finish')); on('cancel','click',()=>$('cancel-dialog').showModal()); on('resume','click',()=>action('resume')); on('collect','click',()=>action('collect')); on('pause','click',()=>$('pause-dialog').showModal());
   on('pause-dialog','close',()=>{const d=$('pause-dialog'),result=d.returnValue;d.returnValue='';if(result==='confirm')action('pause',{confirmed:true});}); on('cancel-dialog','close',()=>{const d=$('cancel-dialog'),result=d.returnValue;d.returnValue='';if(result==='confirm')action('cancel',{confirmed:true});}); on('timer-settings-form','submit',event=>event.preventDefault());
-  for (const id of ['focus-minutes','break-minutes','timer-mode']) { on(id,'input',()=>{markDraft();preview();queueSettingsSave();}); on(id,'change',queueSettingsSave); on(id,'blur',queueSettingsSave); }
+  for (const id of ['focus-minutes','break-minutes','timer-mode']) { on(id,'input',()=>{minutesEdited(id);markDraft();preview();queueSettingsSave();}); on(id,'change',queueSettingsSave); on(id,'blur',queueSettingsSave); }
+  on('eye-choice-no','click',()=>answerEyeChoice(false)); on('eye-choice-yes','click',()=>answerEyeChoice(true));
   on('retry-save','click',()=>{ $('retry-save').hidden=true; queueSettingsSave(); });
   on('save-preset','click',()=>{const settings=validForm();if(settings)action('save-preset',{preset:{focusMinutes:settings.focusMinutes,breakMinutes:settings.breakMinutes}});}); on('settings-toggle','click',()=>{const open=$('settings-view').hidden;$('settings-view').hidden=!open;$('timer-view').hidden=open;$('settings-toggle').setAttribute('aria-expanded',String(open));}); on('settings-close','click',()=>$('settings-toggle').click());
   on('enable-page-warnings','click',()=>{

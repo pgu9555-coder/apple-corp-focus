@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.5
+
+- **First-run eye-tracking choice.** The first time the popup opens, it asks whether to use eye tracking. **Yes, set up camera** turns eye tracking on and opens camera setup; **No camera / not now** leaves it off. Changing the camera preference in settings also counts as the answer, so the question is never asked again.
+- **Custom chip highlights when chosen.** Clicking **Custom**, or typing your own focus or break minutes, now highlights Custom instead of the preset that still matched.
+- **Camera unavailable no longer traps focus in a pause.** If the camera cannot start during a focus block, eye tracking turns off for that session only and focus keeps running. A camera that stops mid-session still pauses once, and the saved setting is unchanged.
+
 ## 0.6.4 — 2026-11-12
 
 - **Connect device works from the toolbar popup.** Chrome closes the popup when its USB chooser opens, so the first connection now opens a small "Connect your Focus Machine" window with a **Choose USB device** button. After a device has been chosen once, **Connect device** reconnects it straight from the popup with no chooser. If that reconnect fails, the next click opens the chooser window.

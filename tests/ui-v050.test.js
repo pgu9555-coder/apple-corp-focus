@@ -6,9 +6,11 @@ import fs from 'node:fs';
 import * as core from '../extension/core.js';
 
 function element(id='') {
-  const listeners={};
-  return {id,hidden:false,disabled:false,value:'',checked:false,textContent:'',title:'',dataset:{},style:{},children:[],returnValue:'',classList:{contains:()=>id==='body',add(){},toggle(){}},
-    addEventListener:(type,fn)=>{(listeners[type]??=[]).push(fn);},fire(type,event={}){for(const fn of listeners[type]||[])fn(event);},append(...nodes){this.children.push(...nodes);},appendChild(node){this.children.push(node);},replaceChildren(...nodes){this.children=[...nodes];},setAttribute(){},showModal(){this.open=true;},click(){this.fire('click',{preventDefault(){},stopPropagation(){}})}};
+  const listeners={}, classes=new Set();
+  if (id==='body') classes.add('popup');
+  return {id,hidden:false,disabled:false,value:'',checked:false,textContent:'',title:'',dataset:{},style:{},children:[],returnValue:'',
+    classList:{contains:c=>classes.has(c),add:(...names)=>names.forEach(n=>classes.add(n)),remove:(...names)=>names.forEach(n=>classes.delete(n)),toggle(name,force){const on=force??!classes.has(name);if(on)classes.add(name);else classes.delete(name);return on;}},
+    addEventListener:(type,fn)=>{(listeners[type]??=[]).push(fn);},fire(type,event={}){for(const fn of listeners[type]||[])fn(event);},append(...nodes){this.children.push(...nodes);},appendChild(node){this.children.push(node);},replaceChildren(...nodes){this.children=[...nodes];},setAttribute(){},focus(){},select(){},showModal(){this.open=true;},close(){this.open=false;},click(){this.fire('click',{preventDefault(){},stopPropagation(){}})}};
 }
 function harness() {
   const elements=new Map(), messages=[];
@@ -88,4 +90,54 @@ test('setup and breaks do not label a previous focus as the current run',async()
   h.state.ui={view:'session'};h.render(structuredClone(h.state));
   assert.equal(h.elements.get('run-rewards').hidden,true);
   assert.equal(h.elements.get('reward-available').textContent,'3');
+});
+
+test('first-run eye-tracking dialog opens only when the choice is unanswered',async()=>{
+  const h=harness();await new Promise(r=>setImmediate(r));
+  h.render({...structuredClone(h.state),eyeTrackingChoiceMade:true});
+  assert.notEqual(h.elements.get('eye-choice-dialog').open,true);
+  h.render(structuredClone(h.state));
+  assert.notEqual(h.elements.get('eye-choice-dialog').open,true);
+  h.render({...structuredClone(h.state),eyeTrackingChoiceMade:false});
+  assert.equal(h.elements.get('eye-choice-dialog').open,true);
+});
+test('eye-tracking choice No sends enabled false, closes the dialog, and does not reopen in this popup',async()=>{
+  const h=harness();await new Promise(r=>setImmediate(r));
+  h.render({...structuredClone(h.state),eyeTrackingChoiceMade:false});
+  h.fire('eye-choice-no','click');await new Promise(r=>setImmediate(r));
+  const msg=h.messages.find(m=>m.type==='eye-tracking-choice');
+  assert.ok(msg);assert.equal(msg.enabled,false);
+  assert.equal(h.elements.get('eye-choice-dialog').open,false);
+  h.render({...structuredClone(h.state),eyeTrackingChoiceMade:false});
+  assert.equal(h.elements.get('eye-choice-dialog').open,false);
+});
+test('eye-tracking choice Yes sends enabled true',async()=>{
+  const h=harness();await new Promise(r=>setImmediate(r));
+  h.render({...structuredClone(h.state),eyeTrackingChoiceMade:false});
+  h.fire('eye-choice-yes','click');await new Promise(r=>setImmediate(r));
+  assert.equal(h.messages.find(m=>m.type==='eye-tracking-choice').enabled,true);
+});
+test('Custom click highlights Custom and clears the matching preset',async()=>{
+  const h=harness();await new Promise(r=>setImmediate(r));
+  h.render(structuredClone(h.state));
+  const before=h.elements.get('preset-row');
+  const preset=before.children[0].children[0], custom=before.children[before.children.length-1];
+  assert.equal(preset.classList.contains('active'),true);
+  assert.equal(custom.classList.contains('active'),false);
+  custom.fire('click');
+  const after=h.elements.get('preset-row');
+  assert.equal(after.children[0].children[0].classList.contains('active'),false);
+  assert.equal(after.children[after.children.length-1].classList.contains('active'),true);
+});
+test('typing custom minutes highlights Custom even when they match a preset, and a preset click clears it',async()=>{
+  const h=harness();await new Promise(r=>setImmediate(r));
+  h.render(structuredClone(h.state));
+  h.elements.get('focus-minutes').value='25';h.fire('focus-minutes','input');
+  let row=h.elements.get('preset-row');
+  assert.equal(row.children[0].children[0].classList.contains('active'),false);
+  assert.equal(row.children[row.children.length-1].classList.contains('active'),true);
+  row.children[0].children[0].fire('click');
+  row=h.elements.get('preset-row');
+  assert.equal(row.children[0].children[0].classList.contains('active'),true);
+  assert.equal(row.children[row.children.length-1].classList.contains('active'),false);
 });

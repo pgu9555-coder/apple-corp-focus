@@ -16,6 +16,8 @@ let warningNotificationId;
 let awayTimer;
 let awayNotificationId;
 let attentionStatus='off', cameraOn=false;
+// True once the user has answered the first-run eye-tracking question (or saved the setting).
+let eyeTrackingChoiceMade=false;
 
 async function focusedTab() {
   const windows=await chrome.windows.getAll({populate:true,windowTypes:['normal','popup']});
@@ -153,11 +155,24 @@ const controller=new Controller({
 });
 const warningWindow=new WarningWindow(chrome,()=>controller.state.session);
 const pageWarnings=new PageWarnings(chrome,()=>controller.snapshot());
+async function openCameraSetup() {
+  const url=chrome.runtime.getURL('camera.html');
+  const tabs=await chrome.tabs.query({});
+  const existing=tabs.find(tab=>tab.url?.split('#')[0]===url);
+  if(existing){await chrome.tabs.update(existing.id,{active:true});await chrome.windows.update(existing.windowId,{focused:true});}
+  else await chrome.tabs.create({url});
+}
+async function saveEyeTrackingChoice() {
+  if(eyeTrackingChoiceMade)return;
+  eyeTrackingChoiceMade=true;
+  await chrome.storage.local.set({eyeTrackingChoiceMade:true});
+}
 const ready=(async()=>{
   await chrome.storage.local.setAccessLevel({accessLevel:'TRUSTED_CONTEXTS'});
   const [saved,epoch,windows]=await Promise.all([
-    chrome.storage.local.get(['state','eyeTrackingDefaultApplied']),chrome.storage.session.get('browserSession'),chrome.windows.getAll({populate:true}),
+    chrome.storage.local.get(['state','eyeTrackingDefaultApplied','eyeTrackingChoiceMade']),chrome.storage.session.get('browserSession'),chrome.windows.getAll({populate:true}),
   ]);
+  eyeTrackingChoiceMade=saved.eyeTrackingChoiceMade===true;
   for(const w of windows){const t=w.tabs?.find(t=>t.active);if(t)activeTabs.set(w.id,t.id);if(w.focused)focusedWindow=w.id;}
   await chrome.storage.session.set({browserSession:true});
   const applyCameraDefault=!saved.eyeTrackingDefaultApplied;
@@ -197,6 +212,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         if(LIVE.has(s?.phase)&&!isPaused(s)&&Date.now()-(s.accountedAt??s.lastCheckAt??Date.now())>=1000)await controller.tick();
         const snapshot=controller.snapshot();
         snapshot.attentionStatus=attentionStatus;
+        snapshot.eyeTrackingChoiceMade=Boolean(eyeTrackingChoiceMade);
         snapshot.activeBlocked=controller.findBlocked(await focusedTab(),snapshot.settings.blockedHosts);
         snapshot.pageWarningAccess=await warningAccess(chrome,snapshot.settings.blockedHosts);
         snapshot.notificationPermission=await chrome.notifications.getPermissionLevel?.().catch(()=> 'unknown')||'unknown';
@@ -228,7 +244,21 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         return controller.snapshot();
       }
       case 'settings': return controller.settings(message.settings);
-      case 'timer-settings': return controller.settings(message.settings,'timer');
+      case 'timer-settings': {
+        const saved=await controller.settings(message.settings,'timer');
+        // Saving the camera preference counts as an answer: never ask again.
+        if(message.settings && typeof message.settings==='object' && 'eyeTracking' in message.settings)await saveEyeTrackingChoice();
+        return {...saved,eyeTrackingChoiceMade:Boolean(eyeTrackingChoiceMade)};
+      }
+      case 'eye-tracking-choice': {
+        const enabled=message.enabled===true;
+        // Settings are locked during a live block. The answer is still recorded, and
+        // the saved setting can be changed later from preferences.
+        if(!LIVE.has(controller.state.session?.phase))await controller.settings({eyeTracking:enabled},'timer');
+        await saveEyeTrackingChoice();
+        if(enabled)await openCameraSetup();
+        return {...controller.snapshot(),eyeTrackingChoiceMade:true};
+      }
       case 'website-settings': return controller.settings(message.settings,'websites');
       case 'save-preset': return controller.savePreset(message.preset);
       case 'delete-preset': return controller.deletePreset(message.id);
@@ -267,11 +297,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         return controller.snapshot();
       }
       case 'open-camera-setup': {
-        const url=chrome.runtime.getURL('camera.html');
-        const tabs=await chrome.tabs.query({});
-        const existing=tabs.find(tab=>tab.url?.split('#')[0]===url);
-        if(existing){await chrome.tabs.update(existing.id,{active:true});await chrome.windows.update(existing.windowId,{focused:true});}
-        else await chrome.tabs.create({url});
+        await openCameraSetup();
         return controller.snapshot();
       }
       case 'test-alert':
