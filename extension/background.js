@@ -257,6 +257,14 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         }
         return {ok:true};
       }
+      case 'open-connect': {
+        const url=chrome.runtime.getURL('connect.html');
+        const tabs=await chrome.tabs.query({});
+        const existing=tabs.find(tab=>tab.url?.split('#')[0]===url);
+        if(existing){await chrome.tabs.update(existing.id,{active:true});await chrome.windows.update(existing.windowId,{focused:true});}
+        else await chrome.windows.create({url,type:'popup',width:440,height:420,focused:true});
+        return controller.snapshot();
+      }
       case 'open-camera-setup': {
         const url=chrome.runtime.getURL('camera.html');
         const tabs=await chrome.tabs.query({});

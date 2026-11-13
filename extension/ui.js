@@ -5,7 +5,7 @@ if (document.body?.classList.contains('popup')) {
   const style=document.createElement('link'); style.rel='stylesheet'; style.href='v050-overrides.css'; document.head.append(style);
 }
 const $=id=>document.getElementById(id), popup=Boolean($('timer'));
-let state=null, timerSignature='', websiteSignature='', presetSignature='', usbBusy=false, pageWarningStatus='', pageWarningStatusKey='';
+let state=null, timerSignature='', websiteSignature='', presetSignature='', usbBusy=false, chooseNextPort=false, pageWarningStatus='', pageWarningStatusKey='';
 let saveTimer=null, saveVersion=0, draftDirty=false, pendingSave=null;
 
 export async function ask(type,extra={}) {
@@ -151,6 +151,14 @@ if (popup) {
     Promise.resolve(result).then(granted=>{ state.pageWarningAccess={...(state.pageWarningAccess||{}),available:true,granted:Boolean(granted),siteCount:hosts.length}; pageWarningStatus=granted?'Enabled for your blocked sites.':'Permission not granted; browser notifications may also be disabled.'; pageWarningStatusKey=JSON.stringify({available:true,granted:Boolean(granted),siteCount:hosts.length}); render(state); }).catch(()=>{pageWarningStatus='Permission not granted; browser notifications may also be disabled.';render(state);});
   });
   on('save-preferences','click',async()=>{if(await action('timer-settings',{settings:{sound:$('sound-enabled').checked,requireArduino:$('arduino-required').checked,eyeTracking:$('eye-tracking').checked}}))$('preferences-saved').textContent='Preferences saved';}); on('camera-setup','click',()=>action('open-camera-setup')); for (const cue of ['success','failure']) on(`test-${cue}`,'click',()=>action('test-alert',{cue})); on('website-settings','click',()=>action('open-dashboard',{section:'websites'}));
-  on('usb-settings','click',async()=>{showError();if(state.hardware.connected){await action('disconnect-device');return;}if(!navigator.serial){showError('Web Serial is unavailable. Use desktop Chrome.');return;}try{const port=await navigator.serial.requestPort();usbBusy=true;render(state);await action('connect-device',{portInfo:port.getInfo()});}catch(error){if(error.name!=='NotFoundError')showError(error.message);}finally{usbBusy=false;if(state)render(state);}}); setInterval(paintClock,250);
+  on('usb-settings','click',async()=>{showError();if(state.hardware.connected){await action('disconnect-device');return;}if(!navigator.serial){showError('Web Serial is unavailable. Use desktop Chrome.');return;}try{
+    // A device chosen before reconnects here directly, with no chooser.
+    const granted=await navigator.serial.getPorts();
+    if(granted.length===1&&!chooseNextPort){usbBusy=true;render(state);if(!await action('connect-device',{portInfo:granted[0].getInfo()})){chooseNextPort=true;showError(`${$('error')?.textContent||'Connection failed.'} Click Connect device again to choose a device.`);}return;}
+    // Chrome closes the toolbar popup when its USB chooser opens, so choose the device in a separate window.
+    const inTab=Boolean(await chrome.tabs?.getCurrent?.());
+    if(!inTab){await ask('open-connect');window.close();return;}
+    const port=await navigator.serial.requestPort();usbBusy=true;render(state);await action('connect-device',{portInfo:port.getInfo()});
+  }catch(error){if(error.name!=='NotFoundError')showError(error.message);}finally{usbBusy=false;if(state)render(state);}}); setInterval(paintClock,250);
 } else on('website-settings-form','submit',async event=>{event.preventDefault();if(await action('website-settings',{settings:{blockedHosts:$('website-rules').value}}))$('website-saved').textContent='Saved';});
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes.state)ask('get').then(render).catch(error=>showError(error.message));}); setInterval(()=>ask('get').then(render).catch(error=>showError(error.message)),1000); action('get');

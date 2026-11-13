@@ -39,8 +39,8 @@ const bool     USE_SENSOR       = true;  // false: reply DISPENSED after the mot
 // Find them with the bench commands below, horn disengaged, then type them here.
 const uint16_t LOAD_US          = 0;     // pocket under the magazine
 const uint16_t RELEASE_US       = 0;     // pocket over the outlet (about 120 degrees away)
-const uint16_t PULSE_MIN_US     = 500;   // hard limits for any commanded pulse
-const uint16_t PULSE_MAX_US     = 2500;
+const uint16_t PULSE_MIN_US     = 544;   // hard limits for any commanded pulse (Servo library range)
+const uint16_t PULSE_MAX_US     = 2400;
 
 // Timing (bench starting values from the C3 build guide; tune on the real machine)
 const uint16_t POWER_SETTLE_MS  = 150;   // after enabling servo power
@@ -303,7 +303,7 @@ void process(char* frame) {
 
 // Bench commands typed in a serial monitor (115200 baud, any line ending):
 //   i        sensor state: IR=clear / IR=blocked
-//   p1500    power the servo and hold this pulse (500-2500 us) to find LOAD_US / RELEASE_US
+//   p1500    power the servo and hold this pulse (544-2400 us) to find LOAD_US / RELEASE_US
 //   x        release the servo and cut its power
 //   s        show mode and settings
 void bench(const char* line) {

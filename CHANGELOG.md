@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.4 — 2026-11-12
+
+- **Connect device works from the toolbar popup.** Chrome closes the popup when its USB chooser opens, so the first connection now opens a small "Connect your Focus Machine" window with a **Choose USB device** button. After a device has been chosen once, **Connect device** reconnects it straight from the popup with no chooser. If that reconnect fails, the next click opens the chooser window.
+- Firmware: servo pulse limits are now 544–2400 µs, matching the Servo library, so calibrated values behave the same on the first move and later ones.
+- `firmware/mac-upload.sh` now installs the **LiquidCrystal I2C** library that the default LCD build needs, so it compiles on a fresh Mac.
+- No timer, reward, website or camera behavior changed.
+
 ## 0.6.3 — 2026-11-11
 
 - Firmware ignores the IR sensor while the disc is still moving (first 500 ms), so the disc passing the sensor is no longer counted as a treat.

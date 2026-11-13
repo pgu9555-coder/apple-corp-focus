@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect device · Apple Corp Focus Machine</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  main{max-width:380px;margin:24px auto;padding:0 16px}
+  h1{font-size:20px;margin:0 0 8px}
+  ol{padding-left:20px;line-height:1.5}
+  #choose{width:100%;padding:14px;font-size:16px;margin-top:8px}
+  #status{min-height:3em;margin-top:14px}
+  #status[data-state="ok"]{color:#087443;font-weight:600}
+  #status[data-state="error"]{color:#b42318}
+</style>
+</head>
+<body>
+<main>
+  <h1>Connect your Focus Machine</h1>
+  <ol>
+    <li>Plug the Arduino into this computer by USB.</li>
+    <li>Close the Arduino Serial Monitor if it is open.</li>
+    <li>Click the button, choose the Arduino in Chrome's list, then click <strong>Connect</strong>.</li>
+  </ol>
+  <button id="choose" class="primary" type="button">Choose USB device</button>
+  <p id="status" role="status"></p>
+</main>
+<script type="module" src="connect.js"></script>
+</body>
+</html>

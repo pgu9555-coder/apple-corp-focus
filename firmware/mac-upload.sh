@@ -45,6 +45,7 @@ fi
 "$CLI" core update-index >/dev/null
 "$CLI" core list | grep -q '^arduino:avr ' || "$CLI" core install arduino:avr
 "$CLI" lib list | grep -q '^Servo ' || "$CLI" lib install Servo
+"$CLI" lib list | grep -q '^LiquidCrystal I2C ' || "$CLI" lib install "LiquidCrystal I2C"   # needed while USE_LCD is 1
 
 echo "Compiling $SKETCH..."
 "$CLI" compile --fqbn "$FQBN" "$SKETCH"

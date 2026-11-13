@@ -62,7 +62,7 @@ Do this with the horn off the rotor (or the mechanism empty), servo power on.
 
 | Command | Effect |
 |---|---|
-| `p1500` | Power the servo and hold a 1500 µs pulse (500 to 2500 allowed) |
+| `p1500` | Power the servo and hold a 1500 µs pulse (544 to 2400 allowed) |
 | `x` | Release the servo and cut its power |
 | `i` | Sensor state: `IR=clear` or `IR=blocked` |
 | `s` | Mode, pulse settings, fault state |

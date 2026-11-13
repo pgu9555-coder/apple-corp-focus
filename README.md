@@ -1,10 +1,10 @@
-# Apple Corp Focus Machine v0.6.3
+# Apple Corp Focus Machine v0.6.4
 
 Apple Corp Focus Machine is an English-only Chrome extension for user-controlled focus sessions, local blocked-site checks, and optional Arduino reward collection. The timer, pause, break, reward, and device actions are available in the popup; **Edit websites** opens the separate website-rules page.
 
 ## Install from a release
 
-1. Download the `apple-corp-focus-v0.6.3.zip` asset from the [latest release](https://github.com/pgu9555-coder/apple-corp-focus/releases/latest).
+1. Download the `apple-corp-focus-v0.6.4.zip` asset from the [latest release](https://github.com/pgu9555-coder/apple-corp-focus/releases/latest).
 2. Extract it to a stable folder. Find the `extension` subfolder containing `manifest.json`.
 3. Open `chrome://extensions` in desktop Chrome and enable **Developer mode**.
 4. Choose **Load unpacked** and select that `extension` subfolder.
@@ -12,7 +12,7 @@ Apple Corp Focus Machine is an English-only Chrome extension for user-controlled
 
 Disable an older copy so that two timers are not running at the same time. Updating the same installation preserves schema-5 settings, blocked hosts, balances, claims, sessions, and history. A fresh folder may have separate local settings.
 
-To update an existing unpacked installation, finish or pause the current session, replace the files in its previously loaded extension folder, and click **Reload** on its Chrome extensions card. Check that the popup says **v0.6.3**. Legacy schema 1–4 data follows the one-time reset of rewards and history; settings are retained. Do not import older storage backups.
+To update an existing unpacked installation, finish or pause the current session, replace the files in its previously loaded extension folder, and click **Reload** on its Chrome extensions card. Check that the popup says **v0.6.4**. Legacy schema 1–4 data follows the one-time reset of rewards and history; settings are retained. Do not import older storage backups.
 
 ## Optional on-page countdown
 
@@ -43,6 +43,8 @@ Before your first focus session after installing or updating, open **Settings �
 
 Recent activity keeps the latest eight records from a local history of up to 100 events. It includes completed sessions, per-interval rewards, cancellations, warnings, failures, pauses, and claims. Success uses a short ascending cue; blocked-site failure uses a descending cue. Sound can be muted in Preferences.
 
+To connect the Arduino, click **Connect device** in the popup. The first time, a small window opens; click **Choose USB device**, pick the Arduino and click **Connect**. Chrome remembers that choice, so later clicks reconnect straight from the popup. Close the Arduino Serial Monitor first, because only one program can use the port.
+
 The reward bank is separate from physical dispensing. After connecting a device, **Collect** sends one unique claim to the Arduino. The claim is persisted before sending and is not automatically resent after a timeout, disconnect, or uncertain reply.
 
 The `firmware` folder is included in the release ZIP. `firmware/FocusMachineServo/FocusMachineServo.ino` drives the dispenser servo (D9), confirms each treat with the chute sensor (D3), and shows the focus or break timer on a 16x2 I2C LCD (A4/A5). Until its two servo positions are calibrated it stays in LED test mode and never moves the servo; see `firmware/FocusMachineServo/README.md`. `firmware/FocusMachineBankTest/FocusMachineBankTest.ino` remains an LED-only protocol test sketch. Simulated serial tests verify protocol logic only; physical dispensing, power, sensor feedback, and mechanical jam behavior still require hardware testing.
@@ -56,4 +58,4 @@ node tests/independent-acceptance.mjs
 
 Tests use simulated clocks and browser/serial interfaces. They do not prove a real installed toolbar session, uninterrupted long-duration timing, or physical hardware behavior. See `TEST_RESULTS.md` for the current run and its limits. This repository is released under the MIT License; see `PRIVACY.md` for local data handling.
 
-Pushes and pull requests run the test suite. Maintainers publish a release by updating the version and pushing its matching `v` tag, for example `v0.6.3`; the release workflow tests again, checks the manifest version, and attaches an installable ZIP containing the extension and the Arduino firmware. Ordinary pushes do not create releases. The tests are available in the repository/source archives.
+Pushes and pull requests run the test suite. Maintainers publish a release by updating the version and pushing its matching `v` tag, for example `v0.6.4`; the release workflow tests again, checks the manifest version, and attaches an installable ZIP containing the extension and the Arduino firmware. Ordinary pushes do not create releases. The tests are available in the repository/source archives.
