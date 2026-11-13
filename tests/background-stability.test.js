@@ -10,14 +10,27 @@ test('background migrates camera on once and preserves later explicit off',async
  const h2=harness(shared);
  try{assert.equal((await h2.invoke({target:'worker',type:'get'})).state.settings.eyeTracking,false);}finally{await h2.close();}
 });
-test('background camera error pauses instead of silently counting',async()=>{
+test('background camera error pauses only after the camera has worked',async()=>{
  const h=harness();
+ const sender={id:'test-extension',url:'chrome-extension://test-extension/offscreen.html'};
  try{
  await h.invoke({target:'worker',type:'start',kind:'focus'});
- const reply=await h.invoke({target:'worker',type:'attention-status',status:'error'},{id:'test-extension',url:'chrome-extension://test-extension/offscreen.html'});
+ assert.equal((await h.invoke({target:'worker',type:'attention-status',status:'watching'},sender)).ok,true);
+ const reply=await h.invoke({target:'worker',type:'attention-status',status:'error'},sender);
  assert.equal(reply.ok,true);
  const {state}=await h.invoke({target:'worker',type:'get'});
  assert.equal(state.session.pauseKind,'camera');assert.notEqual(state.session.pausedAt,null);
+ }finally{await h.close();}
+});
+test('background camera that never worked turns eye tracking off for the session without pausing',async()=>{
+ const h=harness();
+ const sender={id:'test-extension',url:'chrome-extension://test-extension/offscreen.html'};
+ try{
+ await h.invoke({target:'worker',type:'start',kind:'focus'});
+ const reply=await h.invoke({target:'worker',type:'attention-status',status:'denied'},sender);
+ assert.equal(reply.ok,true);
+ const {state}=await h.invoke({target:'worker',type:'get'});
+ assert.equal(state.session.pausedAt,null);assert.equal(state.session.eyeTracking,false);assert.equal(state.settings.eyeTracking,true);
  }finally{await h.close();}
 });
 test('focused warning window does not count as leaving blocked website',async()=>{

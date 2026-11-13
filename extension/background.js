@@ -252,8 +252,9 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
         if(sender.url!==chrome.runtime.getURL('offscreen.html'))throw new Error('Untrusted attention source.');
         if(!['starting','watching','denied','no-camera','error','off'].includes(message.status))throw new Error('Unknown camera status.');
         attentionStatus=message.status;
-        if(['error','denied','no-camera'].includes(message.status)&&cameraWanted(controller.state.session)){
-          await controller.autoPause('Camera monitoring stopped. Open Set up camera to fix access, then resume manually.','camera');
+        if(message.status==='watching')await controller.cameraWorking();
+        else if(['error','denied','no-camera'].includes(message.status)&&cameraWanted(controller.state.session)){
+          await controller.cameraUnavailable();
         }
         return {ok:true};
       }

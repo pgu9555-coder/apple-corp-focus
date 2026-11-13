@@ -46,7 +46,7 @@ export class Controller{
  async settings(input,scope='all'){if(LIVE.has(this.state.session?.phase))throw Error('Settings are locked while a block is active.');if(!input||typeof input!=='object'||Array.isArray(input))throw Error('Settings must be an object.');if(scope!=='all'){const fields={timer:['focusMinutes','breakMinutes','timerMode','sound','requireArduino','eyeTracking'],websites:['blockedHosts']}[scope];if(!fields)throw Error('Unknown settings scope.');if(Object.keys(input).some(k=>!fields.includes(k)))throw Error('A setting is outside the allowed scope.');input={...this.state.settings,...input};}this.state.settings=settingsFrom(input);await this.save();return this.snapshot();}
  async savePreset(input){const f=Number(input?.focusMinutes),b=Number(input?.breakMinutes);settingsFrom({focusMinutes:f,breakMinutes:b,blockedHosts:this.state.settings.blockedHosts});if(!this.state.presets.some(p=>p.focusMinutes===f&&p.breakMinutes===b)){if(this.state.presets.length>=12)throw Error('You can save up to 12 presets.');this.state.presets.push({id:presetId(f,b),focusMinutes:f,breakMinutes:b});}await this.save();return this.snapshot();}
  async deletePreset(id){this.state.presets=this.state.presets.filter(p=>p.id!==id);await this.save();return this.snapshot();}
- async start(kind='focus'){if(!['focus','break'].includes(kind))throw Error('Unknown timer type.');if(LIVE.has(this.state.session?.phase))throw Error('End the current block first.');const settings=this.state.settings;if(kind==='focus'&&settings.requireArduino&&!this.io.hardware().connected)throw Error('Connect USB from the popup first, or turn off Require Arduino.');const host=kind==='focus'?await this.freshHost(settings.blockedHosts):'';if(host)throw Error(`Leave ${host} before starting focus.`);if(kind==='break'&&!(this.state.restMs>0))throw Error('Finish a focus block before starting its chosen break.');const now=this.io.now(),duration=kind==='focus'?settings.focusMinutes*60000:this.state.restMs;this.state.session={id:this.io.uuid().replaceAll('-',''),kind,phase:kind,timerMode:settings.timerMode,focusMinutes:settings.focusMinutes,breakMinutes:settings.breakMinutes,startAt:now,endAt:now+duration,durationMs:duration,effectiveMs:0,accountedAt:now,lastCheckAt:now,pausedAt:null,pausedTotalMs:0,rewardsAwarded:0,blockedHosts:[...settings.blockedHosts],goalReached:false,rewardEarned:false,eyeTracking:Boolean(kind==='focus'&&settings.eyeTracking),awayWarning:null,pauseKind:'',reason:'',host:''};this.state.restMs=0;this.state.ui={view:'session'};await this.save();await this.schedule();return this.snapshot();}
+ async start(kind='focus'){if(!['focus','break'].includes(kind))throw Error('Unknown timer type.');if(LIVE.has(this.state.session?.phase))throw Error('End the current block first.');const settings=this.state.settings;if(kind==='focus'&&settings.requireArduino&&!this.io.hardware().connected)throw Error('Connect USB from the popup first, or turn off Require Arduino.');const host=kind==='focus'?await this.freshHost(settings.blockedHosts):'';if(host)throw Error(`Leave ${host} before starting focus.`);if(kind==='break'&&!(this.state.restMs>0))throw Error('Finish a focus block before starting its chosen break.');const now=this.io.now(),duration=kind==='focus'?settings.focusMinutes*60000:this.state.restMs;this.state.session={id:this.io.uuid().replaceAll('-',''),kind,phase:kind,timerMode:settings.timerMode,focusMinutes:settings.focusMinutes,breakMinutes:settings.breakMinutes,startAt:now,endAt:now+duration,durationMs:duration,effectiveMs:0,accountedAt:now,lastCheckAt:now,pausedAt:null,pausedTotalMs:0,rewardsAwarded:0,blockedHosts:[...settings.blockedHosts],goalReached:false,rewardEarned:false,eyeTracking:Boolean(kind==='focus'&&settings.eyeTracking),awayWarning:null,pauseKind:'',reason:'',host:'',...(kind==='focus'?{cameraSeen:false,cameraFailures:0}:{})};this.state.restMs=0;this.state.ui={view:'session'};await this.save();await this.schedule();return this.snapshot();}
  async prepareFocus(){if(this.state.session&&LIVE.has(this.state.session.phase))throw Error('End the current block first.');this.state.ui={view:'ready'};await this.save();return this.snapshot();}
  gapSafe(now){const s=this.state.session;return now>=s.accountedAt&&now-s.accountedAt<=MAX_GAP;}
  reconcile(now){const s=this.state.session;if(!s||!LIVE.has(s.phase)||isPaused(s)||isFrozen(s))return;const d=Math.max(0,now-s.accountedAt);s.accountedAt=now;s.lastCheckAt=now;s.effectiveMs+=d;}
@@ -95,6 +95,29 @@ export class Controller{
   await this.save();await this.schedule();this.io.alert?.(this.snapshot());
  }
  async tick(){const s=this.state.session;if(!s||!LIVE.has(s.phase))return;const now=this.io.now();if(isPaused(s))return;if(isAway(s)){const host=await this.freshHost(s.blockedHosts);if(host){await this.visit(`https://${host}/`);return;}if(now>=s.awayWarning.deadlineAt)await this.expireAway();return;}if(isWarning(s)){const host=await this.freshHost(s.blockedHosts);await this.visit(host?`https://${host}/`:'');return;}if(!this.gapSafe(now)){await this.autoPause('Monitoring was interrupted or the clock changed. Unobserved time was excluded.');return;}if(s.kind==='focus'){const host=await this.freshHost(s.blockedHosts);if(host){await this.visit(`https://${host}/`);return;}}this.reconcile(now);if(s.kind==='break'&&s.effectiveMs>=s.durationMs){s.effectiveMs=s.durationMs;this.stop('completed','Break finished. Start focus manually when ready.');await this.save();await this.schedule();this.io.alert?.(this.snapshot());return;}const reached=await this.completeGoal();await this.save();if(reached){await this.schedule();if(s.timerMode==='pomodoro')this.io.alert?.(this.snapshot());}}
+ async cameraWorking(){
+  const s=this.state.session;
+  if(!s||s.kind!=='focus'||s.phase!=='focus'||!s.eyeTracking||s.cameraSeen)return;
+  s.cameraSeen=true;await this.save();
+ }
+ async cameraUnavailable(){
+  const s=this.state.session;
+  if(!s||s.kind!=='focus'||s.phase!=='focus'||!s.eyeTracking)return;
+  if(!s.cameraSeen||s.cameraFailures>=1){
+    // Eye tracking is switched off for this session only; the saved setting is untouched.
+    const message='Eye tracking is off for this session because the camera is not available. Use Set up camera before your next session.';
+    const wasAway=isAway(s);
+    s.eyeTracking=false;s.awayWarning=null;
+    if(wasAway){s.accountedAt=this.io.now();s.lastCheckAt=s.accountedAt;}
+    if(isPaused(s)&&s.pauseKind==='camera'){try{await this.resume();}catch{}}
+    if(!isPaused(s)||s.pauseKind==='camera')s.reason=message;
+    this.addHistory('camera-off',{reason:message});
+    await this.save();await this.schedule();
+    return;
+  }
+  s.cameraFailures++;
+  await this.autoPause('Camera monitoring stopped. Open Set up camera to fix access, then resume manually.','camera');
+ }
  async attention(present){
   const s=this.state.session;
   if(!s||s.kind!=='focus'||s.phase!=='focus'||!s.eyeTracking)return;
