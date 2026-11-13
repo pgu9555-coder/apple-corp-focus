@@ -47,7 +47,7 @@ To connect the Arduino, click **Connect device** in the popup. The first time, a
 
 The reward bank is separate from physical dispensing. After connecting a device, **Collect** sends one unique claim to the Arduino. The claim is persisted before sending and is not automatically resent after a timeout, disconnect, or uncertain reply.
 
-The `firmware` folder is included in the release ZIP. `firmware/FocusMachineServo/FocusMachineServo.ino` drives the dispenser servo (D9), confirms each treat with the chute sensor (D3), and shows the focus or break timer on a 16x2 I2C LCD (A4/A5). Until its two servo positions are calibrated it stays in LED test mode and never moves the servo; see `firmware/FocusMachineServo/README.md`. `firmware/FocusMachineBankTest/FocusMachineBankTest.ino` remains an LED-only protocol test sketch. Simulated serial tests verify protocol logic only; physical dispensing, power, sensor feedback, and mechanical jam behavior still require hardware testing.
+The `firmware` folder is included in the release ZIP. `firmware/FocusMachineServo/FocusMachineServo.ino` drives the dispenser servo (D8), confirms each treat with the chute sensor (D3), and shows the focus or break timer on a 16x2 I2C LCD (A4/A5). Until its two servo positions are calibrated it stays in LED test mode and never moves the servo; see `firmware/FocusMachineServo/README.md`. `firmware/FocusMachineBankTest/FocusMachineBankTest.ino` remains an LED-only protocol test sketch. Simulated serial tests verify protocol logic only; physical dispensing, power, sensor feedback, and mechanical jam behavior still require hardware testing.
 
 ## Development
 

@@ -11,7 +11,7 @@ hardware yet.
 
 | Uno pin | Connects to | Notes |
 |---|---|---|
-| D9 | Servo signal | |
+| D8 | Servo signal | |
 | D3 | Chute exit sensor (FC-51) output | Set `SENSOR_ACTIVE_LOW` to match the sensor |
 | A4 / A5 | I2C LCD SDA / SCL | Only used when `USE_LCD` is 1 |
 | 5V | Servo, sensor and LCD power (breadboard rail, capacitor near the servo) | No power switch: `SERVO_ENABLE_PIN = -1` |

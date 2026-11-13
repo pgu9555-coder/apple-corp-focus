@@ -7,7 +7,7 @@
    After calibration it answers READY_BANK and drives the real servo.
 
    Wiring (edit the pin constants if yours differ):
-     D9  servo signal
+     D8  servo signal
      D3  chute exit sensor (FC-51), digital output
      I2C LCD on A4 (SDA) / A5 (SCL), only used when USE_LCD is 1
      The servo is powered straight from the 5 V rail with a capacitor across
@@ -29,7 +29,7 @@
 #include <string.h>
 
 // ---------------- Configuration ----------------
-const uint8_t  SERVO_PIN        = 9;
+const uint8_t  SERVO_PIN        = 8;
 const int8_t   SERVO_ENABLE_PIN = -1;    // -1 = no power switch (servo wired straight to 5 V)
 const uint8_t  SENSOR_PIN       = 3;     // IR sensor OUT is wired to D3
 const bool     SENSOR_ACTIVE_LOW = true; // true: LOW means a treat blocks the sensor
